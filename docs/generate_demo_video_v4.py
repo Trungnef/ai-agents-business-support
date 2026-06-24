@@ -1,1530 +1,1170 @@
 """
-Professional Demo Video Generator v4
-====================================
-PERFECT VOICE-SUBTITLE SYNCHRONIZATION
-- Audio generated PER SEGMENT with exact duration measurement
-- Video frames calculated from ACTUAL audio duration
-- Beautiful diagrams with proper spacing and animations
+Video Demo Generator v4 - Perfect Voice-Subtitle Sync + Beautiful Diagrams
+============================================================================
+Key improvements:
+1. CONTINUOUS SUBTITLES - Long flowing text, split only at natural pauses
+2. WPM-BASED TIMING - Calculate duration from word count (150 WPM for clear speech)
+3. BEAUTIFUL DIAGRAMS - Gradient backgrounds, shadows, icons, modern design
+4. SMOOTH ANIMATIONS - Easing functions, professional transitions
 """
 
-import asyncio
-import os
-import subprocess
-import math
-import wave
-import struct
-from pathlib import Path
-from dataclasses import dataclass, field
-from typing import List, Tuple, Optional
-from io import BytesIO
-
-# Install packages
-def install_packages():
-    packages = ["pillow", "numpy", "opencv-python", "edge-tts", "pydub"]
-    for pkg in packages:
-        try:
-            if pkg == "pydub":
-                __import__("pydub")
-            elif pkg == "opencv-python":
-                __import__("cv2")
-            elif pkg == "edge-tts":
-                __import__("edge_tts")
-            else:
-                __import__(pkg.replace("-", "_"))
-        except ImportError:
-            subprocess.run(["pip", "install", pkg, "-q"], check=False)
-
-install_packages()
-
-from PIL import Image, ImageDraw, ImageFont
-import numpy as np
 import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+import asyncio
 import edge_tts
-from pydub import AudioSegment
+import subprocess
+import os
+from dataclasses import dataclass
+from typing import List, Tuple, Optional
+import math
 
-# ============== CONFIGURATION ==============
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
 WIDTH, HEIGHT = 1920, 1080
 FPS = 30
-OUTPUT_DIR = Path(__file__).parent
-AUDIO_DIR = OUTPUT_DIR / "audio_segments_v4"
-AUDIO_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR = "d:/Projects/ai-agents-business-support/docs"
+AUDIO_DIR = f"{OUTPUT_DIR}/audio_segments_v4"
 
-# Modern color palette (GitHub Dark style)
+# Colors - Modern Dark Theme
 COLORS = {
-    'bg_primary': (13, 17, 23),
-    'bg_secondary': (22, 27, 34),
-    'bg_tertiary': (33, 38, 45),
-    'bg_card': (27, 32, 40),
-    'border': (48, 54, 61),
-    'border_light': (68, 76, 86),
-    'text_primary': (240, 246, 252),
-    'text_secondary': (139, 148, 158),
-    'text_muted': (110, 118, 129),
-    'accent_blue': (88, 166, 255),
-    'accent_green': (63, 185, 80),
-    'accent_red': (248, 81, 73),
-    'accent_purple': (163, 113, 247),
-    'accent_yellow': (210, 153, 34),
-    'accent_cyan': (57, 211, 215),
-    'accent_orange': (219, 109, 40),
-    'accent_pink': (219, 97, 162),
-    # Gradient colors
-    'gradient_blue': [(56, 139, 253), (88, 166, 255), (121, 192, 255)],
-    'gradient_green': [(35, 134, 54), (63, 185, 80), (87, 195, 107)],
-    'gradient_purple': [(130, 80, 223), (163, 113, 247), (196, 146, 255)],
+    'bg_dark': (15, 23, 42),           # Slate 900
+    'bg_medium': (30, 41, 59),          # Slate 800
+    'bg_light': (51, 65, 85),           # Slate 700
+    'primary': (59, 130, 246),          # Blue 500
+    'primary_dark': (37, 99, 235),      # Blue 600
+    'secondary': (139, 92, 246),        # Violet 500
+    'success': (34, 197, 94),           # Green 500
+    'warning': (251, 191, 36),          # Amber 400
+    'error': (239, 68, 68),             # Red 500
+    'text_white': (248, 250, 252),      # Slate 50
+    'text_gray': (148, 163, 184),       # Slate 400
+    'text_muted': (100, 116, 139),      # Slate 500
+    'accent_cyan': (34, 211, 238),      # Cyan 400
+    'accent_pink': (244, 114, 182),     # Pink 400
+    'accent_orange': (251, 146, 60),    # Orange 400
+    'border': (71, 85, 105),            # Slate 600
 }
 
-def get_font(size: int, bold: bool = False, mono: bool = False) -> ImageFont.FreeTypeFont:
-    if mono:
-        paths = ["C:/Windows/Fonts/consola.ttf", "C:/Windows/Fonts/cour.ttf"]
-    elif bold:
-        paths = ["C:/Windows/Fonts/segoeuib.ttf", "C:/Windows/Fonts/arialbd.ttf"]
-    else:
-        paths = ["C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/arial.ttf"]
-    
-    for path in paths:
-        if os.path.exists(path):
-            try:
-                return ImageFont.truetype(path, size)
-            except:
-                continue
-    return ImageFont.load_default()
+# Words per minute for timing calculation
+WPM = 150  # Clear, professional narration speed
 
+# ============================================================================
+# NARRATION DATA - Continuous Subtitles
+# ============================================================================
 
-# ============== NARRATION DATA ==============
 @dataclass
-class NarrationSegment:
-    text: str
-    audio_path: Optional[Path] = None
-    actual_duration: float = 0.0  # Will be set after audio generation
-    
-@dataclass  
-class SceneConfig:
-    name: str
-    segments: List[NarrationSegment]
+class NarrationBlock:
+    """A block of narration with continuous subtitle display"""
+    text: str  # Full narration text (also displayed as subtitle)
+    scene: str  # Which scene this belongs to
     
     @property
-    def total_duration(self) -> float:
-        return sum(s.actual_duration for s in self.segments)
+    def word_count(self) -> int:
+        return len(self.text.split())
     
     @property
-    def total_frames(self) -> int:
-        return int(self.total_duration * FPS)
+    def duration_sec(self) -> float:
+        # Calculate based on WPM, minimum 2 seconds
+        return max(2.0, (self.word_count / WPM) * 60)
 
-
-# Scene definitions
-SCENES = [
-    SceneConfig("intro", [
-        NarrationSegment("Welcome to Multi-Agent Customer Support Assistant."),
-        NarrationSegment("A production-ready AI system for small businesses."),
-        NarrationSegment("Built for the Kaggle Gen AI Intensive Capstone."),
-        NarrationSegment("Track: Agents for Business."),
-    ]),
-    SceneConfig("problem", [
-        NarrationSegment("Small businesses face a major support challenge."),
-        NarrationSegment("Eighty percent of support tickets are repetitive."),
-        NarrationSegment("Customers wait hours for simple answers."),
-        NarrationSegment("Our solution responds in under one second."),
-        NarrationSegment("With twenty-four seven availability."),
-    ]),
-    SceneConfig("architecture", [
-        NarrationSegment("The system uses a multi-agent architecture."),
-        NarrationSegment("Four specialized agents work together seamlessly."),
-        NarrationSegment("Intent Classifier understands customer needs with high accuracy."),
-        NarrationSegment("Data Retrieval Agent fetches information through secure MCP tools."),
-        NarrationSegment("Response Generator creates helpful, personalized replies."),
-        NarrationSegment("Quality Agent ensures safety and masks all PII data."),
-        NarrationSegment("Six MCP tools handle all business operations."),
-    ]),
-    SceneConfig("demo", [
-        NarrationSegment("Let me demonstrate the system in action."),
-        NarrationSegment("First, we set the customer email for session context."),
-        NarrationSegment("Now asking: Where is my order?"),
-        NarrationSegment("Intent classified as order status with high confidence."),
-        NarrationSegment("Access validated. Order details retrieved successfully."),
-        NarrationSegment("Now testing session memory capabilities."),
-        NarrationSegment("Asking: Can I refund it? Without specifying the order."),
-        NarrationSegment("The system remembers the previous order automatically."),
-        NarrationSegment("Context resolution happens seamlessly in the background."),
-        NarrationSegment("Now testing the security guardrails."),
-        NarrationSegment("Trying to access another customer's order."),
-        NarrationSegment("Access denied. Security violation has been logged."),
-    ]),
-    SceneConfig("security", [
-        NarrationSegment("Security is built into every layer of the system."),
-        NarrationSegment("PII masking protects all sensitive customer data."),
-        NarrationSegment("Credit card numbers, emails, and phone numbers are automatically masked."),
-        NarrationSegment("Sixty-six automated tests verify every security claim."),
-        NarrationSegment("All security features are thoroughly tested and verified."),
-    ]),
-    SceneConfig("conclusion", [
-        NarrationSegment("To summarize our implementation."),
-        NarrationSegment("All seven course concepts have been completed."),
-        NarrationSegment("Multi-agent architecture with MCP tool integration."),
-        NarrationSegment("Persistent session memory and security guardrails."),
-        NarrationSegment("The code is fully open source on GitHub."),
-        NarrationSegment("Thank you for watching!"),
-    ]),
+# Define all narration as continuous blocks
+NARRATION_BLOCKS = [
+    # === INTRO SCENE (13s total) ===
+    NarrationBlock(
+        text="Welcome to the Multi-Agent Customer Support Assistant, a Kaggle Capstone project for the Agents for Business track.",
+        scene="intro"
+    ),
+    NarrationBlock(
+        text="This system demonstrates how AI agents can transform small business customer support.",
+        scene="intro"
+    ),
+    
+    # === PROBLEM SCENE (16s total) ===
+    NarrationBlock(
+        text="Small businesses face a critical challenge. 80% of support tickets are repetitive questions like order tracking, refund requests, and password resets.",
+        scene="problem"
+    ),
+    NarrationBlock(
+        text="Yet customers wait hours for answers. Our multi-agent solution handles these requests instantly, securely, and accurately.",
+        scene="problem"
+    ),
+    
+    # === ARCHITECTURE SCENE (28s total) ===
+    NarrationBlock(
+        text="The system implements all seven course concepts from the 5-Day AI Agents course using a modular multi-agent architecture.",
+        scene="architecture"
+    ),
+    NarrationBlock(
+        text="Four specialized agents work together: Intent Classifier analyzes queries, Data Retrieval fetches information via MCP tools, Response Generator creates helpful replies, and Quality Safety ensures security.",
+        scene="architecture"
+    ),
+    NarrationBlock(
+        text="Six MCP tools handle business operations including order lookup, refund processing, ticket creation, and customer authentication.",
+        scene="architecture"
+    ),
+    
+    # === DEMO SCENE (50s total) ===
+    NarrationBlock(
+        text="Let me demonstrate the system in action. First, I'll set the customer email to alice.johnson@email.com and ask about order ORD-2024-002.",
+        scene="demo"
+    ),
+    NarrationBlock(
+        text="The system classifies the intent as ORDER_STATUS, retrieves the order through MCP tools, validates ownership, and generates a response in under one second.",
+        scene="demo"
+    ),
+    NarrationBlock(
+        text="Now watch session memory in action. When I ask 'Can I refund it?', the system remembers the order from context and resolves the reference automatically.",
+        scene="demo"
+    ),
+    NarrationBlock(
+        text="For security demonstration, I'll try accessing order ORD-2024-001 which belongs to a different customer. The system blocks access and increments the violation counter.",
+        scene="demo"
+    ),
+    NarrationBlock(
+        text="Three security violations would trigger automatic session lockout, preventing cross-customer data leakage.",
+        scene="demo"
+    ),
+    
+    # === SECURITY SCENE (20s total) ===
+    NarrationBlock(
+        text="Every security claim is verified by automated tests. The test suite includes 66 tests covering intent classification, PII masking, access control, and session management.",
+        scene="security"
+    ),
+    NarrationBlock(
+        text="PII masking protects sensitive data: credit cards show only the last 4 digits, emails are partially redacted, and internal IDs are completely hidden.",
+        scene="security"
+    ),
+    
+    # === CONCLUSION SCENE (18s total) ===
+    NarrationBlock(
+        text="This Multi-Agent Customer Support Assistant demonstrates how AI agents can provide real business value, reducing customer wait times from hours to seconds.",
+        scene="conclusion"
+    ),
+    NarrationBlock(
+        text="The code is fully open source on GitHub. Thank you for watching, and I welcome your feedback!",
+        scene="conclusion"
+    ),
 ]
 
+# ============================================================================
+# VIDEO GENERATOR CLASS
+# ============================================================================
 
-# ============== AUDIO GENERATION (PER SEGMENT) ==============
-async def generate_segment_audio(segment: NarrationSegment, idx: int) -> float:
-    """Generate audio for a single segment and return actual duration"""
-    audio_path = AUDIO_DIR / f"segment_{idx:03d}.mp3"
-    
-    # Generate TTS
-    communicate = edge_tts.Communicate(
-        segment.text, 
-        "en-US-AriaNeural",
-        rate="-5%",  # Slightly slower for clarity
-        pitch="+0Hz"
-    )
-    await communicate.save(str(audio_path))
-    
-    # Get actual duration using pydub
-    audio = AudioSegment.from_mp3(audio_path)
-    duration = len(audio) / 1000.0  # Convert ms to seconds
-    
-    # Add small padding for natural pauses
-    duration += 0.3
-    
-    segment.audio_path = audio_path
-    segment.actual_duration = duration
-    
-    return duration
-
-
-async def generate_all_audio():
-    """Generate audio for all segments and measure actual durations"""
-    print("\n" + "=" * 60)
-    print("GENERATING AUDIO (Per Segment for Perfect Sync)")
-    print("=" * 60)
-    
-    idx = 0
-    total_duration = 0
-    
-    for scene in SCENES:
-        print(f"\n[{scene.name.upper()}]")
-        for seg in scene.segments:
-            duration = await generate_segment_audio(seg, idx)
-            total_duration += duration
-            print(f"  Segment {idx}: {duration:.2f}s - \"{seg.text[:50]}...\"")
-            idx += 1
-    
-    print(f"\nTotal audio duration: {total_duration:.1f}s ({total_duration/60:.1f} min)")
-    return total_duration
-
-
-def combine_audio_segments() -> Path:
-    """Combine all segment audio files into one"""
-    print("\nCombining audio segments...")
-    
-    combined = AudioSegment.empty()
-    
-    for scene in SCENES:
-        for seg in scene.segments:
-            if seg.audio_path and seg.audio_path.exists():
-                audio = AudioSegment.from_mp3(seg.audio_path)
-                # Add segment audio
-                combined += audio
-                # Add padding silence
-                silence = AudioSegment.silent(duration=300)  # 300ms pause
-                combined += silence
-    
-    output_path = OUTPUT_DIR / "combined_narration_v4.mp3"
-    combined.export(output_path, format="mp3", bitrate="192k")
-    print(f"Combined audio: {output_path} ({len(combined)/1000:.1f}s)")
-    
-    return output_path
-
-
-# ============== ANIMATION UTILITIES ==============
-def ease_out_cubic(t: float) -> float:
-    return 1 - pow(1 - t, 3)
-
-def ease_out_quad(t: float) -> float:
-    return 1 - (1 - t) * (1 - t)
-
-def ease_in_out_sine(t: float) -> float:
-    return -(math.cos(math.pi * t) - 1) / 2
-
-def ease_out_back(t: float) -> float:
-    c1, c3 = 1.70158, c1 + 1
-    return 1 + c3 * pow(t - 1, 3) + c1 * pow(t - 1, 2)
-
-def lerp(a: float, b: float, t: float) -> float:
-    return a + (b - a) * t
-
-def draw_gradient_rect(draw: ImageDraw.ImageDraw, x1: int, y1: int, x2: int, y2: int,
-                       color1: tuple, color2: tuple, vertical: bool = True):
-    """Draw a simple gradient rectangle"""
-    steps = y2 - y1 if vertical else x2 - x1
-    for i in range(max(1, steps)):
-        t = i / max(1, steps - 1)
-        r = int(lerp(color1[0], color2[0], t))
-        g = int(lerp(color1[1], color2[1], t))
-        b = int(lerp(color1[2], color2[2], t))
-        if vertical:
-            draw.line([(x1, y1 + i), (x2, y1 + i)], fill=(r, g, b))
-        else:
-            draw.line([(x1 + i, y1), (x1 + i, y2)], fill=(r, g, b))
-
-
-# ============== VIDEO GENERATOR CLASS ==============
 class VideoGenerator:
     def __init__(self):
         self.frames: List[np.ndarray] = []
-        self.frame_idx = 0
+        self.current_frame = 0
         
-    def create_frame(self) -> Tuple[Image.Image, ImageDraw.ImageDraw]:
-        img = Image.new('RGB', (WIDTH, HEIGHT), COLORS['bg_primary'])
+        # Load fonts
+        self.font_title = ImageFont.truetype("C:/Windows/Fonts/segoeuib.ttf", 64)
+        self.font_heading = ImageFont.truetype("C:/Windows/Fonts/segoeuib.ttf", 48)
+        self.font_subheading = ImageFont.truetype("C:/Windows/Fonts/segoeui.ttf", 36)
+        self.font_body = ImageFont.truetype("C:/Windows/Fonts/segoeui.ttf", 28)
+        self.font_small = ImageFont.truetype("C:/Windows/Fonts/segoeui.ttf", 24)
+        self.font_code = ImageFont.truetype("C:/Windows/Fonts/consola.ttf", 22)
+        self.font_subtitle = ImageFont.truetype("C:/Windows/Fonts/segoeuib.ttf", 32)
+        self.font_icon = ImageFont.truetype("C:/Windows/Fonts/segoeuib.ttf", 40)
+        
+    def create_base_frame(self) -> Image.Image:
+        """Create base frame with gradient background"""
+        img = Image.new('RGB', (WIDTH, HEIGHT), COLORS['bg_dark'])
         draw = ImageDraw.Draw(img)
-        return img, draw
+        
+        # Subtle gradient effect using rectangles
+        for y in range(0, HEIGHT, 4):
+            progress = y / HEIGHT
+            r = int(COLORS['bg_dark'][0] + (COLORS['bg_medium'][0] - COLORS['bg_dark'][0]) * progress * 0.3)
+            g = int(COLORS['bg_dark'][1] + (COLORS['bg_medium'][1] - COLORS['bg_dark'][1]) * progress * 0.3)
+            b = int(COLORS['bg_dark'][2] + (COLORS['bg_medium'][2] - COLORS['bg_dark'][2]) * progress * 0.3)
+            draw.line([(0, y), (WIDTH, y)], fill=(r, g, b))
+        
+        return img
     
-    def add_frame(self, img: Image.Image, count: int = 1):
-        frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-        for _ in range(count):
-            self.frames.append(frame)
-            self.frame_idx += 1
+    def draw_rounded_rect(self, draw: ImageDraw.Draw, xy: Tuple[int, int, int, int], 
+                          radius: int, fill: Tuple[int, int, int], 
+                          outline: Optional[Tuple[int, int, int]] = None,
+                          outline_width: int = 2):
+        """Draw a rounded rectangle"""
+        x1, y1, x2, y2 = xy
+        
+        # Draw main rectangle
+        draw.rounded_rectangle(xy, radius=radius, fill=fill, outline=outline, width=outline_width)
     
-    def draw_subtitle_bar(self, draw: ImageDraw.ImageDraw, text: str, progress: float = 0.0):
-        """Beautiful subtitle bar at bottom"""
-        if not text:
-            return
+    def draw_gradient_rect(self, img: Image.Image, xy: Tuple[int, int, int, int],
+                           color1: Tuple[int, int, int], color2: Tuple[int, int, int],
+                           radius: int = 0, vertical: bool = True):
+        """Draw rectangle with gradient fill"""
+        x1, y1, x2, y2 = xy
+        gradient = Image.new('RGB', (x2 - x1, y2 - y1))
+        draw_grad = ImageDraw.Draw(gradient)
         
-        bar_height = 85
-        bar_y = HEIGHT - bar_height - 25
-        bar_margin = 80
+        if vertical:
+            for y in range(y2 - y1):
+                progress = y / (y2 - y1)
+                r = int(color1[0] + (color2[0] - color1[0]) * progress)
+                g = int(color1[1] + (color2[1] - color1[1]) * progress)
+                b = int(color1[2] + (color2[2] - color1[2]) * progress)
+                draw_grad.line([(0, y), (x2 - x1, y)], fill=(r, g, b))
+        else:
+            for x in range(x2 - x1):
+                progress = x / (x2 - x1)
+                r = int(color1[0] + (color2[0] - color1[0]) * progress)
+                g = int(color1[1] + (color2[1] - color1[1]) * progress)
+                b = int(color1[2] + (color2[2] - color1[2]) * progress)
+                draw_grad.line([(x, 0), (x, y2 - y1)], fill=(r, g, b))
         
-        # Outer glow effect
-        for i in range(3):
-            alpha = 30 - i * 10
-            draw.rounded_rectangle(
-                [(bar_margin - i*2, bar_y - i*2), (WIDTH - bar_margin + i*2, bar_y + bar_height + i*2)],
-                radius=15 + i,
-                fill=(*COLORS['bg_tertiary'][:3],)
-            )
-        
-        # Main background
-        draw.rounded_rectangle(
-            [(bar_margin, bar_y), (WIDTH - bar_margin, bar_y + bar_height)],
-            radius=14,
-            fill=(*COLORS['bg_secondary'][:3],)
-        )
-        
-        # Border
-        draw.rounded_rectangle(
-            [(bar_margin, bar_y), (WIDTH - bar_margin, bar_y + bar_height)],
-            radius=14,
-            outline=COLORS['border_light'],
-            width=1
-        )
-        
-        # Progress indicator line at bottom
-        if progress > 0:
-            prog_w = int((WIDTH - 2 * bar_margin - 20) * progress)
-            draw.rounded_rectangle(
-                [(bar_margin + 10, bar_y + bar_height - 6), 
-                 (bar_margin + 10 + prog_w, bar_y + bar_height - 3)],
-                radius=2,
-                fill=COLORS['accent_cyan']
-            )
-        
-        # Centered text with shadow
-        font = get_font(30)
+        # Create mask for rounded corners if needed
+        if radius > 0:
+            mask = Image.new('L', (x2 - x1, y2 - y1), 0)
+            mask_draw = ImageDraw.Draw(mask)
+            mask_draw.rounded_rectangle((0, 0, x2 - x1, y2 - y1), radius=radius, fill=255)
+            img.paste(gradient, (x1, y1), mask)
+        else:
+            img.paste(gradient, (x1, y1))
+    
+    def draw_text_centered(self, draw: ImageDraw.Draw, text: str, y: int, 
+                           font: ImageFont.FreeTypeFont, color: Tuple[int, int, int]):
+        """Draw text centered horizontally"""
         bbox = draw.textbbox((0, 0), text, font=font)
-        text_w = bbox[2] - bbox[0]
-        x = (WIDTH - text_w) // 2
-        
-        # Text shadow
-        draw.text((x + 2, bar_y + 27), text, font=font, fill=(0, 0, 0))
-        # Main text
-        draw.text((x, bar_y + 25), text, font=font, fill=COLORS['text_primary'])
+        text_width = bbox[2] - bbox[0]
+        x = (WIDTH - text_width) // 2
+        draw.text((x, y), text, font=font, fill=color)
     
-    def draw_progress_bar(self, draw: ImageDraw.ImageDraw, progress: float, section: str):
-        """Top progress bar"""
-        bar_y = 18
-        bar_h = 5
+    def draw_text_wrapped(self, draw: ImageDraw.Draw, text: str, xy: Tuple[int, int],
+                          max_width: int, font: ImageFont.FreeTypeFont, 
+                          color: Tuple[int, int, int], line_spacing: int = 8) -> int:
+        """Draw wrapped text and return total height"""
+        x, y = xy
+        words = text.split()
+        lines = []
+        current_line = []
         
-        # Background
-        draw.rounded_rectangle([(50, bar_y), (WIDTH - 50, bar_y + bar_h)], 
-                               radius=3, fill=COLORS['border'])
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            bbox = draw.textbbox((0, 0), test_line, font=font)
+            if bbox[2] - bbox[0] <= max_width:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(' '.join(current_line))
+                current_line = [word]
         
-        # Progress
-        prog_w = int((WIDTH - 100) * progress)
-        if prog_w > 4:
-            draw.rounded_rectangle([(50, bar_y), (50 + prog_w, bar_y + bar_h)],
-                                   radius=3, fill=COLORS['accent_blue'])
+        if current_line:
+            lines.append(' '.join(current_line))
         
-        # Section label
-        font = get_font(13)
-        draw.text((50, bar_y + 12), section.upper(), font=font, fill=COLORS['text_muted'])
+        total_height = 0
+        for line in lines:
+            draw.text((x, y + total_height), line, font=font, fill=color)
+            bbox = draw.textbbox((0, 0), line, font=font)
+            total_height += (bbox[3] - bbox[1]) + line_spacing
+        
+        return total_height
     
-    def draw_node_box(self, draw: ImageDraw.ImageDraw, 
-                      x: int, y: int, w: int, h: int,
-                      title: str, icon: str, color: tuple, 
-                      desc: str = "", active: bool = False, progress: float = 1.0):
-        """Draw a beautiful node box for architecture diagram"""
-        if progress <= 0:
-            return
+    def draw_subtitle_bar(self, img: Image.Image, text: str, progress: float):
+        """Draw beautiful subtitle bar at bottom"""
+        draw = ImageDraw.Draw(img)
         
-        scale = ease_out_cubic(min(1.0, progress))
-        actual_w = int(w * scale)
-        actual_h = int(h * scale)
-        actual_x = x + (w - actual_w) // 2
-        actual_y = y + (h - actual_h) // 2
+        # Subtitle background - dark semi-transparent bar
+        bar_height = 120
+        bar_y = HEIGHT - bar_height - 40
         
-        if actual_w < 20:
-            return
+        # Create gradient background for subtitle
+        self.draw_gradient_rect(img, (100, bar_y, WIDTH - 100, bar_y + bar_height),
+                                (20, 30, 50), (30, 45, 70), radius=20)
         
-        # Shadow
-        if progress > 0.5:
-            draw.rounded_rectangle(
-                [actual_x + 4, actual_y + 4, actual_x + actual_w + 4, actual_y + actual_h + 4],
-                radius=12, fill=(0, 0, 0)
-            )
+        # Add subtle border
+        draw.rounded_rectangle((100, bar_y, WIDTH - 100, bar_y + bar_height),
+                               radius=20, outline=COLORS['border'], width=2)
         
-        # Main box
-        draw.rounded_rectangle(
-            [actual_x, actual_y, actual_x + actual_w, actual_y + actual_h],
-            radius=12, fill=COLORS['bg_card']
-        )
+        # Draw subtitle text - wrapped and centered
+        max_text_width = WIDTH - 280
+        words = text.split()
+        lines = []
+        current_line = []
         
-        # Active glow or border
-        border_color = color if active else COLORS['border']
-        border_width = 3 if active else 2
-        draw.rounded_rectangle(
-            [actual_x, actual_y, actual_x + actual_w, actual_y + actual_h],
-            radius=12, outline=border_color, width=border_width
-        )
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            bbox = draw.textbbox((0, 0), test_line, font=self.font_subtitle)
+            if bbox[2] - bbox[0] <= max_text_width:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(' '.join(current_line))
+                current_line = [word]
+        if current_line:
+            lines.append(' '.join(current_line))
         
-        # Top accent bar
-        draw.rounded_rectangle(
-            [actual_x, actual_y, actual_x + actual_w, actual_y + 8],
-            radius=12, fill=color
-        )
-        draw.rectangle(
-            [actual_x, actual_y + 4, actual_x + actual_w, actual_y + 8],
-            fill=color
-        )
+        # Calculate total text height
+        line_height = 40
+        total_text_height = len(lines) * line_height
+        start_y = bar_y + (bar_height - total_text_height) // 2
         
-        if progress > 0.4:
-            # Icon circle
-            icon_size = 38
-            icon_x = actual_x + 18
-            icon_y = actual_y + 25
-            draw.ellipse(
-                [icon_x, icon_y, icon_x + icon_size, icon_y + icon_size],
-                fill=color
-            )
-            font_icon = get_font(20, bold=True)
-            draw.text((icon_x + 11, icon_y + 8), icon, font=font_icon, fill=COLORS['bg_primary'])
-            
-            # Title
-            font_title = get_font(20, bold=True)
-            draw.text((icon_x + icon_size + 12, icon_y + 8), title, 
-                     font=font_title, fill=COLORS['text_primary'])
+        # Draw each line centered
+        for i, line in enumerate(lines):
+            bbox = draw.textbbox((0, 0), line, font=self.font_subtitle)
+            line_width = bbox[2] - bbox[0]
+            x = (WIDTH - line_width) // 2
+            draw.text((x, start_y + i * line_height), line, 
+                      font=self.font_subtitle, fill=COLORS['text_white'])
         
-        if progress > 0.7 and desc:
-            font_desc = get_font(15)
-            draw.text((actual_x + 18, actual_y + 75), desc,
-                     font=font_desc, fill=COLORS['text_secondary'])
+        # Progress indicator dots
+        dot_y = bar_y + bar_height + 15
+        for i in range(5):
+            dot_x = WIDTH // 2 - 60 + i * 30
+            if i / 5 <= progress:
+                draw.ellipse((dot_x - 5, dot_y - 5, dot_x + 5, dot_y + 5), 
+                            fill=COLORS['primary'])
+            else:
+                draw.ellipse((dot_x - 5, dot_y - 5, dot_x + 5, dot_y + 5), 
+                            fill=COLORS['bg_light'])
     
-    def draw_arrow(self, draw: ImageDraw.ImageDraw, 
-                   x1: int, y1: int, x2: int, y2: int, 
-                   color: tuple, animated: bool = False, frame: int = 0):
-        """Draw animated arrow"""
-        # Main line
-        draw.line([(x1, y1), (x2, y2)], fill=color, width=3)
+    def draw_progress_bar(self, img: Image.Image, progress: float, scene_name: str):
+        """Draw top progress bar"""
+        draw = ImageDraw.Draw(img)
         
-        # Arrowhead
-        angle = math.atan2(y2 - y1, x2 - x1)
-        arrow_len = 12
-        arrow_angle = math.pi / 6
+        # Background bar
+        bar_y = 20
+        bar_height = 6
+        draw.rounded_rectangle((60, bar_y, WIDTH - 60, bar_y + bar_height),
+                               radius=3, fill=COLORS['bg_light'])
         
-        ax1 = x2 - arrow_len * math.cos(angle - arrow_angle)
-        ay1 = y2 - arrow_len * math.sin(angle - arrow_angle)
-        ax2 = x2 - arrow_len * math.cos(angle + arrow_angle)
-        ay2 = y2 - arrow_len * math.sin(angle + arrow_angle)
+        # Progress fill
+        fill_width = int((WIDTH - 120) * progress)
+        if fill_width > 0:
+            draw.rounded_rectangle((60, bar_y, 60 + fill_width, bar_y + bar_height),
+                                   radius=3, fill=COLORS['primary'])
         
-        draw.polygon([(x2, y2), (ax1, ay1), (ax2, ay2)], fill=color)
-        
-        # Animated dot
-        if animated:
-            t = (frame % 60) / 60
-            dot_x = int(lerp(x1, x2, t))
-            dot_y = int(lerp(y1, y2, t))
-            draw.ellipse([dot_x - 5, dot_y - 5, dot_x + 5, dot_y + 5], fill=COLORS['accent_cyan'])
+        # Scene indicator
+        draw.text((60, bar_y + 15), scene_name.upper(), 
+                  font=self.font_small, fill=COLORS['text_muted'])
     
-    def draw_terminal(self, draw: ImageDraw.ImageDraw,
-                      x: int, y: int, w: int, h: int,
-                      title: str, lines: List[Tuple[str, tuple]],
-                      typing: str = "", cursor_visible: bool = True):
-        """Professional terminal window"""
-        # Shadow
-        draw.rounded_rectangle([x+5, y+5, x+w+5, y+h+5], radius=14, fill=(0, 0, 0))
+    # ========================================================================
+    # SCENE RENDERERS
+    # ========================================================================
+    
+    def render_intro_scene(self, block: NarrationBlock, frame_in_block: int, 
+                           total_frames: int) -> Image.Image:
+        """Render intro scene with animated logo and title"""
+        img = self.create_base_frame()
+        draw = ImageDraw.Draw(img)
         
-        # Main window
-        draw.rounded_rectangle([x, y, x+w, y+h], radius=14, fill=COLORS['bg_secondary'])
-        draw.rounded_rectangle([x, y, x+w, y+h], radius=14, outline=COLORS['border'], width=2)
+        progress = frame_in_block / total_frames
+        ease_progress = self.ease_out_cubic(min(1.0, progress * 2))
         
-        # Title bar
-        title_h = 46
-        draw.rounded_rectangle([x, y, x+w, y+title_h], radius=14, fill=COLORS['bg_tertiary'])
-        draw.rectangle([x, y+title_h-14, x+w, y+title_h], fill=COLORS['bg_tertiary'])
+        # Animated background circles
+        for i in range(3):
+            circle_progress = (progress + i * 0.3) % 1.0
+            alpha = int(30 * (1 - circle_progress))
+            radius = int(100 + circle_progress * 400)
+            cx, cy = WIDTH // 2, HEIGHT // 2 - 100
+            # Draw expanding circles
+            if alpha > 5:
+                draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius),
+                            outline=(*COLORS['primary'][:3],), width=2)
         
-        # Traffic lights
-        btn_y = y + title_h // 2
-        draw.ellipse([x+18, btn_y-7, x+32, btn_y+7], fill=COLORS['accent_red'])
-        draw.ellipse([x+44, btn_y-7, x+58, btn_y+7], fill=COLORS['accent_yellow'])
-        draw.ellipse([x+70, btn_y-7, x+84, btn_y+7], fill=COLORS['accent_green'])
+        # Main title card
+        card_width = 1000
+        card_height = 400
+        card_x = (WIDTH - card_width) // 2
+        card_y = int(150 + (1 - ease_progress) * 50)
+        
+        # Card with gradient
+        self.draw_gradient_rect(img, (card_x, card_y, card_x + card_width, card_y + card_height),
+                                COLORS['bg_medium'], COLORS['bg_light'], radius=30)
+        draw.rounded_rectangle((card_x, card_y, card_x + card_width, card_y + card_height),
+                               radius=30, outline=COLORS['primary'], width=3)
+        
+        # Icon
+        icon_text = "🤖"
+        draw.text((WIDTH // 2 - 30, card_y + 40), icon_text, 
+                  font=self.font_title, fill=COLORS['primary'])
         
         # Title
-        font_title = get_font(15, bold=True)
-        draw.text((x + 100, y + 14), title, font=font_title, fill=COLORS['text_secondary'])
+        self.draw_text_centered(draw, "Multi-Agent Customer Support", 
+                               card_y + 130, self.font_title, COLORS['text_white'])
+        self.draw_text_centered(draw, "Assistant for SMBs", 
+                               card_y + 210, self.font_heading, COLORS['text_gray'])
         
-        # Content
-        font_mono = get_font(18, mono=True)
-        content_y = y + title_h + 15
-        line_h = 26
-        max_lines = (h - title_h - 40) // line_h
+        # Badge
+        badge_text = "Kaggle Capstone • Agents for Business Track"
+        badge_bbox = draw.textbbox((0, 0), badge_text, font=self.font_subheading)
+        badge_width = badge_bbox[2] - badge_bbox[0] + 40
+        badge_x = (WIDTH - badge_width) // 2
+        badge_y = card_y + 300
         
-        visible = lines[-max_lines:] if len(lines) > max_lines else lines
+        draw.rounded_rectangle((badge_x, badge_y, badge_x + badge_width, badge_y + 50),
+                               radius=25, fill=COLORS['primary_dark'])
+        self.draw_text_centered(draw, badge_text, badge_y + 8, 
+                               self.font_subheading, COLORS['text_white'])
         
-        for i, (text, color) in enumerate(visible):
-            max_chars = (w - 50) // 11
-            display = text[:max_chars] + "..." if len(text) > max_chars else text
-            draw.text((x + 20, content_y + i * line_h), display, font=font_mono, fill=color)
-        
-        # Typing line with cursor
-        if typing or cursor_visible:
-            typing_y = content_y + len(visible) * line_h + 10
-            cursor = "█" if cursor_visible and (self.frame_idx % 16 < 8) else " "
-            draw.text((x + 20, typing_y), f"$ {typing}{cursor}", font=font_mono, fill=COLORS['text_primary'])
-
-    # ============== SCENE GENERATORS ==============
+        return img
     
-    def generate_intro_scene(self, scene: SceneConfig):
-        """Generate intro with perfect sync"""
-        print(f"  Generating {scene.name} ({scene.total_frames} frames, {scene.total_duration:.1f}s)...")
+    def render_problem_scene(self, block: NarrationBlock, frame_in_block: int,
+                             total_frames: int) -> Image.Image:
+        """Render problem scene with statistics"""
+        img = self.create_base_frame()
+        draw = ImageDraw.Draw(img)
         
-        # Track which segment we're in
-        segment_idx = 0
-        frames_in_segment = 0
-        segment_frames = int(scene.segments[0].actual_duration * FPS)
+        progress = frame_in_block / total_frames
         
-        for f in range(scene.total_frames):
-            img, draw = self.create_frame()
-            
-            # Check if we need to move to next segment
-            if frames_in_segment >= segment_frames and segment_idx < len(scene.segments) - 1:
-                segment_idx += 1
-                frames_in_segment = 0
-                segment_frames = int(scene.segments[segment_idx].actual_duration * FPS)
-            
-            current_subtitle = scene.segments[segment_idx].text
-            segment_progress = frames_in_segment / max(1, segment_frames)
-            frames_in_segment += 1
-            
-            total_progress = f / max(1, scene.total_frames - 1)
-            
-            # Background particles
-            for i in range(20):
-                px = int((i * 97 + f * 0.5) % WIDTH)
-                py = int((i * 73 + f * 0.3) % HEIGHT)
-                size = 2 + (i % 4)
-                brightness = 20 + int(15 * math.sin(f * 0.04 + i * 0.5))
-                color = (*COLORS['accent_blue'][:3],)
-                draw.ellipse([px, py, px+size, py+size], fill=color)
-            
-            cx, cy = WIDTH // 2, HEIGHT // 2
-            
-            # Badge animation
-            if f > 20:
-                badge_prog = ease_out_cubic(min(1, (f - 20) / 30))
-                badge_y = int(cy - 180 - 30 * (1 - badge_prog))
-                
-                badge_text = "KAGGLE CAPSTONE 2026"
-                font_badge = get_font(22, bold=True)
-                bbox = draw.textbbox((0, 0), badge_text, font=font_badge)
-                badge_w = bbox[2] - bbox[0] + 60
-                
-                # Badge background with glow
-                for i in range(3):
-                    draw.rounded_rectangle(
-                        [cx - badge_w//2 - i*2, badge_y - i*2, cx + badge_w//2 + i*2, badge_y + 44 + i*2],
-                        radius=22 + i, fill=COLORS['accent_blue'] if i == 0 else (*COLORS['accent_blue'][:3],)
-                    )
-                
-                draw.text((cx - badge_w//2 + 30, badge_y + 10), badge_text,
-                         font=font_badge, fill=COLORS['bg_primary'])
-            
-            # Main title with animation
-            if f > 40:
-                title_prog = ease_out_cubic(min(1, (f - 40) / 35))
-                title_y = int(cy - 70 + 40 * (1 - title_prog))
-                
-                title1 = "Multi-Agent Customer Support"
-                title2 = "Assistant for SMBs"
-                font_title = get_font(62, bold=True)
-                
-                # Shadow
-                bbox1 = draw.textbbox((0, 0), title1, font=font_title)
-                draw.text((cx - (bbox1[2]-bbox1[0])//2 + 3, title_y + 3), title1,
-                         font=font_title, fill=(0, 0, 0))
-                draw.text((cx - (bbox1[2]-bbox1[0])//2, title_y), title1,
-                         font=font_title, fill=COLORS['text_primary'])
-                
-                bbox2 = draw.textbbox((0, 0), title2, font=font_title)
-                draw.text((cx - (bbox2[2]-bbox2[0])//2 + 3, title_y + 75 + 3), title2,
-                         font=font_title, fill=(0, 0, 0))
-                draw.text((cx - (bbox2[2]-bbox2[0])//2, title_y + 75), title2,
-                         font=font_title, fill=COLORS['text_primary'])
-            
-            # Animated underline
-            if f > 80:
-                line_prog = ease_out_cubic(min(1, (f - 80) / 30))
-                line_w = int(400 * line_prog)
-                draw.rounded_rectangle(
-                    [cx - line_w//2, cy + 90, cx + line_w//2, cy + 97],
-                    radius=4, fill=COLORS['accent_cyan']
-                )
-            
-            # Subtitle text
-            if f > 100:
-                track_text = "Track: Agents for Business"
-                font_track = get_font(28)
-                bbox = draw.textbbox((0, 0), track_text, font=font_track)
-                draw.text((cx - (bbox[2]-bbox[0])//2, cy + 130), track_text,
-                         font=font_track, fill=COLORS['text_secondary'])
-            
-            self.draw_progress_bar(draw, total_progress * 0.1, "Introduction")
-            self.draw_subtitle_bar(draw, current_subtitle, segment_progress)
-            self.add_frame(img)
-    
-    def generate_problem_scene(self, scene: SceneConfig):
-        """Generate problem/solution with better diagrams"""
-        print(f"  Generating {scene.name} ({scene.total_frames} frames, {scene.total_duration:.1f}s)...")
+        # Title
+        self.draw_text_centered(draw, "The Challenge", 120, self.font_title, COLORS['text_white'])
         
-        segment_idx = 0
-        frames_in_segment = 0
-        segment_frames = int(scene.segments[0].actual_duration * FPS)
-        
-        for f in range(scene.total_frames):
-            img, draw = self.create_frame()
-            
-            if frames_in_segment >= segment_frames and segment_idx < len(scene.segments) - 1:
-                segment_idx += 1
-                frames_in_segment = 0
-                segment_frames = int(scene.segments[segment_idx].actual_duration * FPS)
-            
-            current_subtitle = scene.segments[segment_idx].text
-            segment_progress = frames_in_segment / max(1, segment_frames)
-            frames_in_segment += 1
-            total_progress = f / max(1, scene.total_frames - 1)
-            
-            # Header
-            font_header = get_font(48, bold=True)
-            draw.text((90, 85), "Problem & Solution", font=font_header, fill=COLORS['text_primary'])
-            
-            # Layout: Two cards side by side with proper gap
-            panel_w = 780
-            panel_h = 500
-            panel_y = 170
-            gap = 100
-            left_x = (WIDTH - 2 * panel_w - gap) // 2
-            right_x = left_x + panel_w + gap
-            
-            # Left panel - Problem (slides in from left)
-            left_prog = ease_out_cubic(min(1, f / 50))
-            actual_left_x = int(-panel_w + (panel_w + left_x) * left_prog)
-            
-            # Problem card shadow
-            draw.rounded_rectangle(
-                [actual_left_x + 5, panel_y + 5, actual_left_x + panel_w + 5, panel_y + panel_h + 5],
-                radius=18, fill=(0, 0, 0)
-            )
-            # Problem card
-            draw.rounded_rectangle(
-                [actual_left_x, panel_y, actual_left_x + panel_w, panel_y + panel_h],
-                radius=18, fill=COLORS['bg_card']
-            )
-            draw.rounded_rectangle(
-                [actual_left_x, panel_y, actual_left_x + panel_w, panel_y + panel_h],
-                radius=18, outline=COLORS['accent_red'], width=3
-            )
-            
-            # Problem header bar
-            draw.rounded_rectangle(
-                [actual_left_x, panel_y, actual_left_x + panel_w, panel_y + 55],
-                radius=18, fill=COLORS['accent_red']
-            )
-            draw.rectangle([actual_left_x, panel_y + 40, actual_left_x + panel_w, panel_y + 55], 
-                          fill=COLORS['accent_red'])
-            
-            font_section = get_font(24, bold=True)
-            draw.text((actual_left_x + 30, panel_y + 14), "THE PROBLEM",
-                     font=font_section, fill=COLORS['bg_primary'])
-            
-            # Animated statistic
-            if f > 35:
-                stat_prog = ease_out_cubic(min(1, (f - 35) / 60))
-                stat_val = int(80 * stat_prog)
-                font_big = get_font(120, bold=True)
-                draw.text((actual_left_x + 40, panel_y + 75), f"{stat_val}%",
-                         font=font_big, fill=COLORS['accent_red'])
-                
-                font_label = get_font(26)
-                draw.text((actual_left_x + 40, panel_y + 210), "of tickets are repetitive",
-                         font=font_label, fill=COLORS['text_primary'])
-            
-            # Problem list with animated items
-            problems = [
-                ("📦", "Order tracking inquiries"),
-                ("💰", "Refund and return requests"),
-                ("🔑", "Password reset issues"),
-                ("❓", "Common FAQ questions")
-            ]
-            font_item = get_font(22)
-            for i, (icon, prob) in enumerate(problems):
-                show_at = 60 + i * 18
-                if f > show_at:
-                    item_prog = ease_out_cubic(min(1, (f - show_at) / 20))
-                    item_y = panel_y + 270 + i * 52
-                    offset = int(30 * (1 - item_prog))
-                    
-                    draw.ellipse([actual_left_x + 40 + offset, item_y + 2, actual_left_x + 60 + offset, item_y + 22],
-                               fill=COLORS['accent_red'])
-                    draw.text((actual_left_x + 75 + offset, item_y), prob,
-                             font=font_item, fill=COLORS['text_secondary'])
-            
-            # Right panel - Solution (slides in from right after delay)
-            if f > 55:
-                right_prog = ease_out_cubic(min(1, (f - 55) / 50))
-                actual_right_x = int(WIDTH + (right_x - WIDTH) * right_prog)
-                
-                # Solution card shadow
-                draw.rounded_rectangle(
-                    [actual_right_x + 5, panel_y + 5, actual_right_x + panel_w + 5, panel_y + panel_h + 5],
-                    radius=18, fill=(0, 0, 0)
-                )
-                # Solution card
-                draw.rounded_rectangle(
-                    [actual_right_x, panel_y, actual_right_x + panel_w, panel_y + panel_h],
-                    radius=18, fill=COLORS['bg_card']
-                )
-                draw.rounded_rectangle(
-                    [actual_right_x, panel_y, actual_right_x + panel_w, panel_y + panel_h],
-                    radius=18, outline=COLORS['accent_green'], width=3
-                )
-                
-                # Solution header bar
-                draw.rounded_rectangle(
-                    [actual_right_x, panel_y, actual_right_x + panel_w, panel_y + 55],
-                    radius=18, fill=COLORS['accent_green']
-                )
-                draw.rectangle([actual_right_x, panel_y + 40, actual_right_x + panel_w, panel_y + 55],
-                              fill=COLORS['accent_green'])
-                
-                draw.text((actual_right_x + 30, panel_y + 14), "OUR SOLUTION",
-                         font=font_section, fill=COLORS['bg_primary'])
-                
-                # Solution metrics in 2x2 grid
-                solutions = [
-                    ("< 1 sec", "Response Time", COLORS['accent_cyan']),
-                    ("24/7", "Availability", COLORS['accent_purple']),
-                    ("100%", "PII Protection", COLORS['accent_green']),
-                    ("10x", "Scalability", COLORS['accent_orange']),
-                ]
-                
-                metric_w, metric_h = 340, 180
-                for i, (val, label, color) in enumerate(solutions):
-                    show_at = 90 + i * 20
-                    if f > show_at:
-                        row, col = i // 2, i % 2
-                        mx = actual_right_x + 35 + col * (metric_w + 30)
-                        my = panel_y + 75 + row * (metric_h + 20)
-                        
-                        # Metric box
-                        draw.rounded_rectangle(
-                            [mx, my, mx + metric_w, my + metric_h],
-                            radius=12, fill=COLORS['bg_tertiary']
-                        )
-                        draw.rounded_rectangle(
-                            [mx, my, mx + metric_w, my + 6],
-                            radius=12, fill=color
-                        )
-                        draw.rectangle([mx, my + 3, mx + metric_w, my + 6], fill=color)
-                        
-                        font_val = get_font(48, bold=True)
-                        font_lbl = get_font(20)
-                        draw.text((mx + 25, my + 40), val, font=font_val, fill=color)
-                        draw.text((mx + 25, my + 110), label, font=font_lbl, fill=COLORS['text_secondary'])
-            
-            self.draw_progress_bar(draw, 0.1 + total_progress * 0.12, "Problem & Solution")
-            self.draw_subtitle_bar(draw, current_subtitle, segment_progress)
-            self.add_frame(img)
-    
-    def generate_architecture_scene(self, scene: SceneConfig):
-        """Generate architecture diagram with beautiful flow"""
-        print(f"  Generating {scene.name} ({scene.total_frames} frames, {scene.total_duration:.1f}s)...")
-        
-        segment_idx = 0
-        frames_in_segment = 0
-        segment_frames = int(scene.segments[0].actual_duration * FPS)
-        
-        agents = [
-            ("1", "Intent Classifier", "Understands needs", COLORS['accent_blue']),
-            ("2", "Data Retrieval", "Fetches via MCP", COLORS['accent_cyan']),
-            ("3", "Response Generator", "Creates replies", COLORS['accent_green']),
-            ("4", "Quality Agent", "Safety & PII", COLORS['accent_purple']),
+        # Animated stat cards
+        cards = [
+            ("80%", "Repetitive Tickets", "Order tracking, refunds, passwords", COLORS['error']),
+            ("Hours", "Wait Times", "Customers wait for simple answers", COLORS['warning']),
+            ("<1s", "Our Solution", "Instant, accurate responses", COLORS['success']),
         ]
+        
+        card_width = 350
+        card_height = 280
+        gap = 80
+        total_width = len(cards) * card_width + (len(cards) - 1) * gap
+        start_x = (WIDTH - total_width) // 2
+        
+        for i, (stat, title, desc, accent) in enumerate(cards):
+            # Staggered animation
+            card_progress = self.ease_out_cubic(max(0, min(1, (progress - i * 0.15) * 2)))
+            
+            x = start_x + i * (card_width + gap)
+            y = int(250 + (1 - card_progress) * 100)
+            
+            # Card background
+            self.draw_gradient_rect(img, (x, y, x + card_width, y + card_height),
+                                    COLORS['bg_medium'], COLORS['bg_light'], radius=20)
+            
+            # Accent top bar
+            draw.rounded_rectangle((x, y, x + card_width, y + 8), radius=4, fill=accent)
+            
+            # Big stat number
+            stat_bbox = draw.textbbox((0, 0), stat, font=self.font_title)
+            stat_x = x + (card_width - (stat_bbox[2] - stat_bbox[0])) // 2
+            draw.text((stat_x, y + 40), stat, font=self.font_title, fill=accent)
+            
+            # Title
+            title_bbox = draw.textbbox((0, 0), title, font=self.font_heading)
+            title_x = x + (card_width - (title_bbox[2] - title_bbox[0])) // 2
+            draw.text((title_x, y + 130), title, font=self.font_heading, fill=COLORS['text_white'])
+            
+            # Description
+            self.draw_text_wrapped(draw, desc, (x + 20, y + 200), card_width - 40,
+                                   self.font_body, COLORS['text_gray'])
+        
+        return img
+    
+    def render_architecture_scene(self, block: NarrationBlock, frame_in_block: int,
+                                   total_frames: int) -> Image.Image:
+        """Render beautiful architecture diagram"""
+        img = self.create_base_frame()
+        draw = ImageDraw.Draw(img)
+        
+        progress = frame_in_block / total_frames
+        
+        # Title
+        self.draw_text_centered(draw, "Multi-Agent Architecture", 80, 
+                               self.font_title, COLORS['text_white'])
+        
+        # Course concepts badge
+        badge_text = "Implementing 7 Course Concepts"
+        badge_bbox = draw.textbbox((0, 0), badge_text, font=self.font_body)
+        badge_w = badge_bbox[2] - badge_bbox[0] + 30
+        badge_x = (WIDTH - badge_w) // 2
+        draw.rounded_rectangle((badge_x, 145, badge_x + badge_w, 185), 
+                               radius=20, fill=COLORS['secondary'])
+        self.draw_text_centered(draw, badge_text, 152, self.font_body, COLORS['text_white'])
+        
+        # Agent pipeline - horizontal flow
+        agents = [
+            ("Intent\nClassifier", "🎯", COLORS['primary'], "Analyzes\nquery type"),
+            ("Data\nRetrieval", "📊", COLORS['accent_cyan'], "Fetches info\nvia MCP"),
+            ("Response\nGenerator", "💬", COLORS['success'], "Creates\nhelpful reply"),
+            ("Quality\nSafety", "🛡️", COLORS['error'], "Ensures\nsecurity"),
+        ]
+        
+        box_width = 200
+        box_height = 160
+        gap = 100
+        total_w = len(agents) * box_width + (len(agents) - 1) * gap
+        start_x = (WIDTH - total_w) // 2
+        agents_y = 230
+        
+        for i, (name, icon, color, desc) in enumerate(agents):
+            anim_progress = self.ease_out_cubic(max(0, min(1, (progress - i * 0.1) * 2.5)))
+            
+            x = start_x + i * (box_width + gap)
+            y = agents_y + int((1 - anim_progress) * 30)
+            
+            # Box with gradient
+            self.draw_gradient_rect(img, (x, y, x + box_width, y + box_height),
+                                    COLORS['bg_medium'], COLORS['bg_light'], radius=15)
+            draw.rounded_rectangle((x, y, x + box_width, y + box_height),
+                                   radius=15, outline=color, width=3)
+            
+            # Icon circle
+            icon_cx = x + box_width // 2
+            icon_cy = y + 45
+            draw.ellipse((icon_cx - 25, icon_cy - 25, icon_cx + 25, icon_cy + 25), fill=color)
+            
+            # Name
+            for j, line in enumerate(name.split('\n')):
+                line_bbox = draw.textbbox((0, 0), line, font=self.font_body)
+                line_x = x + (box_width - (line_bbox[2] - line_bbox[0])) // 2
+                draw.text((line_x, y + 80 + j * 30), line, 
+                         font=self.font_body, fill=COLORS['text_white'])
+            
+            # Arrow to next
+            if i < len(agents) - 1:
+                arrow_x = x + box_width + 20
+                arrow_y = y + box_height // 2
+                # Arrow line
+                draw.line((arrow_x, arrow_y, arrow_x + 60, arrow_y), 
+                         fill=COLORS['text_muted'], width=3)
+                # Arrow head
+                draw.polygon([(arrow_x + 60, arrow_y), (arrow_x + 50, arrow_y - 8),
+                             (arrow_x + 50, arrow_y + 8)], fill=COLORS['text_muted'])
+        
+        # MCP Tools section
+        tools_y = 450
+        draw.text((100, tools_y), "MCP Tools", font=self.font_heading, fill=COLORS['accent_cyan'])
         
         tools = [
-            "get_order_details",
-            "get_refund_policy", 
-            "get_customer_profile",
-            "create_support_ticket",
-            "mask_sensitive_data",
-            "audit_log_event"
+            ("get_order_details", "📦"),
+            ("get_refund_policy", "💰"),
+            ("create_support_ticket", "🎫"),
+            ("verify_customer", "✓"),
+            ("get_customer_history", "📋"),
+            ("update_order_status", "🔄"),
         ]
         
-        for f in range(scene.total_frames):
-            img, draw = self.create_frame()
+        tool_box_w = 250
+        tool_box_h = 50
+        tools_per_row = 3
+        tool_gap = 30
+        
+        for i, (tool_name, tool_icon) in enumerate(tools):
+            row = i // tools_per_row
+            col = i % tools_per_row
             
-            if frames_in_segment >= segment_frames and segment_idx < len(scene.segments) - 1:
-                segment_idx += 1
-                frames_in_segment = 0
-                segment_frames = int(scene.segments[segment_idx].actual_duration * FPS)
+            tool_anim = self.ease_out_cubic(max(0, min(1, (progress - 0.3 - i * 0.05) * 3)))
             
-            current_subtitle = scene.segments[segment_idx].text
-            segment_progress = frames_in_segment / max(1, segment_frames)
-            frames_in_segment += 1
-            total_progress = f / max(1, scene.total_frames - 1)
+            x = 100 + col * (tool_box_w + tool_gap)
+            y = tools_y + 60 + row * (tool_box_h + 15) + int((1 - tool_anim) * 20)
             
-            # Header
-            font_header = get_font(46, bold=True)
-            draw.text((90, 70), "Multi-Agent Architecture", font=font_header, fill=COLORS['text_primary'])
+            draw.rounded_rectangle((x, y, x + tool_box_w, y + tool_box_h),
+                                   radius=10, fill=COLORS['bg_medium'], 
+                                   outline=COLORS['accent_cyan'], width=1)
+            draw.text((x + 15, y + 12), f"{tool_icon} {tool_name}", 
+                     font=self.font_code, fill=COLORS['text_white'])
+        
+        # Session & Memory section
+        session_y = 450
+        session_x = 950
+        draw.text((session_x, session_y), "Session & Memory", 
+                 font=self.font_heading, fill=COLORS['secondary'])
+        
+        # Memory features
+        memory_features = [
+            "SQLite-backed persistent sessions",
+            "Multi-turn conversation context",
+            "Automatic reference resolution",
+            "Session security tracking",
+        ]
+        
+        for i, feature in enumerate(memory_features):
+            feat_anim = self.ease_out_cubic(max(0, min(1, (progress - 0.4 - i * 0.05) * 3)))
+            y = session_y + 60 + i * 45 + int((1 - feat_anim) * 20)
             
-            font_sub = get_font(22)
-            draw.text((90, 130), "Four specialized agents working in orchestrated sequence",
-                     font=font_sub, fill=COLORS['text_secondary'])
+            # Bullet
+            draw.ellipse((session_x, y + 8, session_x + 12, y + 20), fill=COLORS['secondary'])
+            draw.text((session_x + 25, y), feature, font=self.font_body, fill=COLORS['text_white'])
+        
+        # Security section at bottom
+        security_y = 700
+        draw.text((100, security_y), "Security Guardrails", 
+                 font=self.font_heading, fill=COLORS['error'])
+        
+        security_items = ["PII Masking", "Access Control", "Session Lockout", "Audit Logging"]
+        
+        for i, item in enumerate(security_items):
+            sec_anim = self.ease_out_cubic(max(0, min(1, (progress - 0.5 - i * 0.05) * 3)))
             
-            # Agent flow diagram - horizontal layout
-            box_w, box_h = 380, 105
-            start_x = 90
-            start_y = 195
-            gap_y = 125
+            x = 100 + i * 220
+            y = security_y + 50 + int((1 - sec_anim) * 20)
             
-            for i, (num, title, desc, color) in enumerate(agents):
-                show_at = 30 + i * 40
-                if f > show_at:
-                    prog = min(1, (f - show_at) / 35)
-                    is_active = segment_idx >= 2 + i and segment_idx <= 2 + i + 1
-                    
-                    y = start_y + i * gap_y
-                    self.draw_node_box(draw, start_x, y, box_w, box_h, title, num, color, desc, is_active, prog)
+            draw.rounded_rectangle((x, y, x + 200, y + 45), radius=8,
+                                   fill=COLORS['bg_medium'], outline=COLORS['error'], width=2)
             
-            # Connection arrows between agents (vertical)
-            if f > 110:
-                for i in range(3):
-                    arrow_y1 = start_y + box_h + i * gap_y + 5
-                    arrow_y2 = start_y + (i + 1) * gap_y - 5
-                    arrow_x = start_x + box_w // 2
-                    
-                    if f > 110 + i * 30:
-                        self.draw_arrow(draw, arrow_x, arrow_y1, arrow_x, arrow_y2, 
-                                       COLORS['accent_cyan'], animated=True, frame=f)
-            
-            # MCP Tools section - right side
-            if f > 180:
-                tools_prog = ease_out_cubic(min(1, (f - 180) / 45))
-                tools_x = 550
-                tools_y = 195
-                tools_w = 520
-                tools_h = 480
-                
-                actual_x = int(WIDTH + (tools_x - WIDTH) * tools_prog)
-                
-                # Shadow
-                draw.rounded_rectangle(
-                    [actual_x + 5, tools_y + 5, actual_x + tools_w + 5, tools_y + tools_h + 5],
-                    radius=16, fill=(0, 0, 0)
-                )
-                # Main card
-                draw.rounded_rectangle(
-                    [actual_x, tools_y, actual_x + tools_w, tools_y + tools_h],
-                    radius=16, fill=COLORS['bg_card']
-                )
-                draw.rounded_rectangle(
-                    [actual_x, tools_y, actual_x + tools_w, tools_y + tools_h],
-                    radius=16, outline=COLORS['accent_orange'], width=3
-                )
-                
-                # Header bar
-                draw.rounded_rectangle(
-                    [actual_x, tools_y, actual_x + tools_w, tools_y + 55],
-                    radius=16, fill=COLORS['accent_orange']
-                )
-                draw.rectangle([actual_x, tools_y + 40, actual_x + tools_w, tools_y + 55],
-                              fill=COLORS['accent_orange'])
-                
-                font_section = get_font(22, bold=True)
-                draw.text((actual_x + 25, tools_y + 15), "MCP Tool Server (6 Tools)",
-                         font=font_section, fill=COLORS['bg_primary'])
-                
-                # Tool items
-                font_tool = get_font(18, mono=True)
-                for i, tool in enumerate(tools):
-                    show_at = 200 + i * 12
-                    if f > show_at:
-                        ty = tools_y + 75 + i * 65
-                        
-                        draw.rounded_rectangle(
-                            [actual_x + 20, ty, actual_x + tools_w - 20, ty + 50],
-                            radius=8, fill=COLORS['bg_tertiary']
-                        )
-                        draw.rounded_rectangle(
-                            [actual_x + 20, ty, actual_x + 26, ty + 50],
-                            radius=8, fill=COLORS['accent_cyan']
-                        )
-                        draw.rectangle([actual_x + 23, ty, actual_x + 26, ty + 50], fill=COLORS['accent_cyan'])
-                        
-                        draw.text((actual_x + 45, ty + 14), tool,
-                                 font=font_tool, fill=COLORS['accent_cyan'])
-            
-            # Data flow visualization on far right
-            if f > 280:
-                flow_x = 1130
-                flow_y = 195
-                flow_w = 310
-                flow_h = 480
-                
-                flow_prog = ease_out_cubic(min(1, (f - 280) / 40))
-                
-                draw.rounded_rectangle(
-                    [flow_x, flow_y, flow_x + flow_w, flow_y + int(flow_h * flow_prog)],
-                    radius=14, fill=COLORS['bg_card']
-                )
-                draw.rounded_rectangle(
-                    [flow_x, flow_y, flow_x + flow_w, flow_y + int(flow_h * flow_prog)],
-                    radius=14, outline=COLORS['accent_purple'], width=2
-                )
-                
-                if flow_prog > 0.4:
-                    font_flow = get_font(18, bold=True)
-                    draw.text((flow_x + 20, flow_y + 18), "Data Flow",
-                             font=font_flow, fill=COLORS['accent_purple'])
-                    
-                    # Flow steps
-                    steps = ["Customer Query", "Intent Analysis", "Data Fetch", "Response Gen", "Quality Check", "Final Reply"]
-                    font_step = get_font(15)
-                    
-                    for i, step in enumerate(steps):
-                        step_y = flow_y + 60 + i * 68
-                        
-                        if step_y < flow_y + flow_h * flow_prog - 40:
-                            # Step circle
-                            draw.ellipse([flow_x + 25, step_y, flow_x + 45, step_y + 20],
-                                       fill=COLORS['accent_purple'])
-                            draw.text((flow_x + 31, step_y + 2), str(i+1), 
-                                     font=get_font(12, bold=True), fill=COLORS['bg_primary'])
-                            
-                            draw.text((flow_x + 60, step_y), step,
-                                     font=font_step, fill=COLORS['text_secondary'])
-                            
-                            # Connecting line
-                            if i < 5 and step_y + 50 < flow_y + flow_h * flow_prog - 20:
-                                draw.line([(flow_x + 35, step_y + 22), (flow_x + 35, step_y + 60)],
-                                         fill=COLORS['border_light'], width=2)
-            
-            self.draw_progress_bar(draw, 0.22 + total_progress * 0.18, "Architecture")
-            self.draw_subtitle_bar(draw, current_subtitle, segment_progress)
-            self.add_frame(img)
+            item_bbox = draw.textbbox((0, 0), item, font=self.font_body)
+            item_x = x + (200 - (item_bbox[2] - item_bbox[0])) // 2
+            draw.text((item_x, y + 10), item, font=self.font_body, fill=COLORS['text_white'])
+        
+        return img
     
-    def generate_demo_scene(self, scene: SceneConfig):
-        """Generate CLI demo with perfect timing"""
-        print(f"  Generating {scene.name} ({scene.total_frames} frames, {scene.total_duration:.1f}s)...")
+    def render_demo_scene(self, block: NarrationBlock, frame_in_block: int,
+                          total_frames: int) -> Image.Image:
+        """Render demo scene with terminal simulation"""
+        img = self.create_base_frame()
+        draw = ImageDraw.Draw(img)
         
-        segment_idx = 0
-        frames_in_segment = 0
-        segment_frames = int(scene.segments[0].actual_duration * FPS)
+        progress = frame_in_block / total_frames
         
-        # Calculate frame ranges for each demo step based on segment timing
-        cumulative_frames = []
-        total = 0
-        for seg in scene.segments:
-            cumulative_frames.append(total)
-            total += int(seg.actual_duration * FPS)
+        # Terminal window
+        term_x, term_y = 100, 100
+        term_w, term_h = WIDTH - 200, HEIGHT - 300
         
-        # Demo events tied to segments
-        demo_commands = [
-            None,  # 0: "Let me demonstrate..."
-            ("/email alice.johnson@email.com", [  # 1: "First, we set the customer email..."
-                ("[SESSION] Customer email set: alice.johnson@email.com", COLORS['accent_green']),
-            ]),
-            ("Where is my order ORD-2024-002?", [  # 2: "Now asking: Where is my order?"
-                ("[INTENT] ORDER_STATUS (confidence: 0.94)", COLORS['accent_purple']),
-            ]),
-            None,  # 3: "Intent classified..."
-            (None, [  # 4: "Access validated..."
-                ("[AUTH] Access: OWNER VERIFIED", COLORS['accent_green']),
-                ("[MCP] get_order_details('ORD-2024-002')", COLORS['accent_cyan']),
-                ("", COLORS['text_primary']),
-                ("Your order ORD-2024-002 is currently SHIPPED.", COLORS['text_primary']),
-                ("Expected delivery: Tomorrow by 5 PM", COLORS['text_primary']),
-            ]),
-            None,  # 5: "Now testing session memory..."
-            ("Can I get a refund for it?", [  # 6: "Asking: Can I refund it?"
-                ("[INTENT] REFUND_REQUEST (confidence: 0.91)", COLORS['accent_purple']),
-            ]),
-            (None, [  # 7: "The system remembers..."
-                ("[MEMORY] Resolving 'it' -> ORD-2024-002", COLORS['accent_yellow']),
-            ]),
-            (None, [  # 8: "Context resolution..."
-                ("[MCP] get_refund_policy()", COLORS['accent_cyan']),
-                ("", COLORS['text_primary']),
-                ("Yes! This order is eligible for a full refund.", COLORS['text_primary']),
-                ("Still within 30-day return window.", COLORS['text_primary']),
-            ]),
-            None,  # 9: "Now testing security..."
-            ("Show me order ORD-2024-001", [  # 10: "Trying to access another..."
-                ("[INTENT] ORDER_STATUS (confidence: 0.92)", COLORS['accent_purple']),
-            ]),
-            (None, [  # 11: "Access denied..."
-                ("[AUTH] Access: DENIED - Owner mismatch", COLORS['accent_red']),
-                ("[SECURITY] Violation logged: Attempt #1/3", COLORS['accent_red']),
-                ("", COLORS['text_primary']),
-                ("I cannot access order ORD-2024-001.", COLORS['accent_red']),
-                ("This order belongs to a different customer.", COLORS['accent_red']),
-            ]),
-        ]
+        # Terminal chrome (title bar)
+        draw.rounded_rectangle((term_x, term_y, term_x + term_w, term_y + 40),
+                               radius=10, fill=COLORS['bg_light'])
         
-        terminal_lines = [
-            ("$ python -m src.cli chat", COLORS['text_primary']),
-            ("Starting Multi-Agent Support CLI v2.0...", COLORS['accent_cyan']),
-            ("[OK] Session store initialized", COLORS['accent_green']),
-            ("[OK] MCP server ready (6 tools loaded)", COLORS['accent_green']),
-            ("", COLORS['text_primary']),
-        ]
-        current_cmd = ""
-        typing_idx = 0
-        output_idx = 0
-        state = "idle"  # idle, typing, output
-        last_segment_idx = -1
+        # Window buttons
+        for i, color in enumerate([COLORS['error'], COLORS['warning'], COLORS['success']]):
+            draw.ellipse((term_x + 20 + i * 25, term_y + 12, 
+                         term_x + 36 + i * 25, term_y + 28), fill=color)
         
-        for f in range(scene.total_frames):
-            img, draw = self.create_frame()
+        # Terminal title
+        draw.text((term_x + term_w // 2 - 100, term_y + 8), 
+                 "Multi-Agent Support CLI", font=self.font_small, fill=COLORS['text_gray'])
+        
+        # Terminal body
+        draw.rectangle((term_x, term_y + 40, term_x + term_w, term_y + term_h),
+                       fill=COLORS['bg_dark'])
+        draw.rectangle((term_x, term_y + 40, term_x + term_w, term_y + term_h),
+                       outline=COLORS['border'], width=1)
+        
+        # Terminal content - based on narration block
+        content_y = term_y + 60
+        line_height = 32
+        
+        # Determine which demo phase we're in based on block text
+        if "set the customer email" in block.text.lower():
+            lines = [
+                ("$ python -m src.cli chat", COLORS['text_gray']),
+                ("", None),
+                ("Welcome to Multi-Agent Support CLI", COLORS['accent_cyan']),
+                ("Type /help for commands, /quit to exit", COLORS['text_muted']),
+                ("", None),
+                ("> /email alice.johnson@email.com", COLORS['text_white']),
+                ("✓ Email set to: alice.johnson@email.com", COLORS['success']),
+                ("", None),
+                ("> Where is my order ORD-2024-002?", COLORS['text_white']),
+            ]
+            # Animated typing effect
+            visible_lines = int(len(lines) * min(1, progress * 1.5))
+            lines = lines[:visible_lines]
             
-            if frames_in_segment >= segment_frames and segment_idx < len(scene.segments) - 1:
-                segment_idx += 1
-                frames_in_segment = 0
-                segment_frames = int(scene.segments[segment_idx].actual_duration * FPS)
+        elif "classifies the intent" in block.text.lower():
+            lines = [
+                ("> Where is my order ORD-2024-002?", COLORS['text_white']),
+                ("", None),
+                ("┌─ Agent Pipeline ─────────────────────────────────────┐", COLORS['border']),
+                ("│ ▶ Intent Classifier: ORDER_STATUS                    │", COLORS['primary']),
+                ("│ ▶ Data Retrieval: Fetching order details...          │", COLORS['accent_cyan']),
+                ("│ ▶ MCP Tool: get_order_details(ORD-2024-002)          │", COLORS['secondary']),
+                ("│ ▶ Access Control: ✓ Verified owner                   │", COLORS['success']),
+                ("│ ▶ Response Generator: Creating reply...              │", COLORS['accent_pink']),
+                ("└───────────────────────────────────────────────────────┘", COLORS['border']),
+                ("", None),
+                ("📦 Order ORD-2024-002 Status:", COLORS['accent_cyan']),
+                ("   Status: Shipped", COLORS['text_white']),
+                ("   Carrier: FedEx • Tracking: FX123456789", COLORS['text_white']),
+                ("   Estimated Delivery: June 26, 2026", COLORS['success']),
+            ]
+            visible_lines = int(len(lines) * min(1, progress * 1.2))
+            lines = lines[:visible_lines]
             
-            current_subtitle = scene.segments[segment_idx].text
-            segment_progress = frames_in_segment / max(1, segment_frames)
-            frames_in_segment += 1
-            total_progress = f / max(1, scene.total_frames - 1)
+        elif "session memory" in block.text.lower():
+            lines = [
+                ("> Can I refund it?", COLORS['text_white']),
+                ("", None),
+                ("┌─ Context Resolution ─────────────────────────────────┐", COLORS['border']),
+                ("│ 🧠 Session Memory: Resolving 'it'...                 │", COLORS['secondary']),
+                ("│ ▶ Found reference: 'it' → ORD-2024-002               │", COLORS['success']),
+                ("│ ▶ Intent: REFUND_REQUEST                             │", COLORS['primary']),
+                ("│ ▶ MCP Tool: get_refund_policy()                      │", COLORS['accent_cyan']),
+                ("└───────────────────────────────────────────────────────┘", COLORS['border']),
+                ("", None),
+                ("💰 Refund Policy for ORD-2024-002:", COLORS['accent_cyan']),
+                ("   Order delivered 3 days ago", COLORS['text_white']),
+                ("   ✓ Within 30-day return window", COLORS['success']),
+                ("   Refund can be processed upon item return", COLORS['text_white']),
+            ]
+            visible_lines = int(len(lines) * min(1, progress * 1.2))
+            lines = lines[:visible_lines]
             
-            # Trigger demo events on segment change
-            if segment_idx != last_segment_idx:
-                last_segment_idx = segment_idx
+        elif "security demonstration" in block.text.lower() or "different customer" in block.text.lower():
+            lines = [
+                ("> Show me order ORD-2024-001", COLORS['text_white']),
+                ("", None),
+                ("┌─ Security Check ─────────────────────────────────────┐", COLORS['border']),
+                ("│ ▶ Intent: ORDER_STATUS                               │", COLORS['primary']),
+                ("│ ▶ MCP Tool: get_order_details(ORD-2024-001)          │", COLORS['accent_cyan']),
+                ("│ ⚠ Access Control: Checking ownership...              │", COLORS['warning']),
+                ("│ ✗ DENIED: Order belongs to different customer        │", COLORS['error']),
+                ("│ ⚠ Security: Violation count incremented (1/3)        │", COLORS['warning']),
+                ("└───────────────────────────────────────────────────────┘", COLORS['border']),
+                ("", None),
+                ("🚫 Access Denied", COLORS['error']),
+                ("   You don't have permission to view this order.", COLORS['text_white']),
+                ("   This incident has been logged.", COLORS['text_muted']),
+            ]
+            visible_lines = int(len(lines) * min(1, progress * 1.2))
+            lines = lines[:visible_lines]
+            
+        elif "lockout" in block.text.lower():
+            lines = [
+                ("┌─ Security Guardrails ─────────────────────────────────┐", COLORS['border']),
+                ("│                                                       │", COLORS['border']),
+                ("│   🛡️  Session Protection Active                       │", COLORS['error']),
+                ("│                                                       │", COLORS['border']),
+                ("│   • Cross-customer access blocked                     │", COLORS['text_white']),
+                ("│   • Violation tracking: 1/3 attempts                  │", COLORS['warning']),
+                ("│   • 3 violations → Automatic session lockout          │", COLORS['error']),
+                ("│   • All access attempts logged for audit              │", COLORS['text_muted']),
+                ("│                                                       │", COLORS['border']),
+                ("└───────────────────────────────────────────────────────┘", COLORS['border']),
+                ("", None),
+                ("Security features prevent data leakage", COLORS['text_gray']),
+                ("between customer accounts.", COLORS['text_gray']),
+            ]
+            visible_lines = int(len(lines) * min(1, progress * 1.5))
+            lines = lines[:visible_lines]
+        else:
+            # Default demo content
+            lines = [
+                ("$ python -m src.cli chat", COLORS['text_gray']),
+                ("", None),
+                ("Welcome to Multi-Agent Support CLI", COLORS['accent_cyan']),
+                ("Type /help for commands, /quit to exit", COLORS['text_muted']),
+            ]
+        
+        # Draw terminal lines
+        for i, (line, color) in enumerate(lines):
+            if color:
+                draw.text((term_x + 20, content_y + i * line_height), 
+                         line, font=self.font_code, fill=color)
+        
+        return img
+    
+    def render_security_scene(self, block: NarrationBlock, frame_in_block: int,
+                               total_frames: int) -> Image.Image:
+        """Render security and testing scene"""
+        img = self.create_base_frame()
+        draw = ImageDraw.Draw(img)
+        
+        progress = frame_in_block / total_frames
+        
+        # Title
+        self.draw_text_centered(draw, "Security & Testing", 80, 
+                               self.font_title, COLORS['text_white'])
+        
+        if "66 tests" in block.text.lower() or "automated tests" in block.text.lower():
+            # Test results panel
+            panel_x, panel_y = 100, 180
+            panel_w = 800
+            
+            draw.text((panel_x, panel_y), "Test Suite Results", 
+                     font=self.font_heading, fill=COLORS['success'])
+            
+            # Test categories with progress bars
+            tests = [
+                ("Intent Classification", 24, 24, COLORS['primary']),
+                ("PII Masking", 12, 12, COLORS['error']),
+                ("Access Control", 15, 15, COLORS['warning']),
+                ("Session Management", 8, 8, COLORS['secondary']),
+                ("Full Orchestrator", 7, 7, COLORS['success']),
+            ]
+            
+            for i, (name, passed, total, color) in enumerate(tests):
+                test_anim = self.ease_out_cubic(max(0, min(1, (progress - i * 0.1) * 2)))
                 
-                if segment_idx < len(demo_commands) and demo_commands[segment_idx] is not None:
-                    cmd_data = demo_commands[segment_idx]
-                    if cmd_data[0] is not None:  # Has command to type
-                        current_cmd = cmd_data[0]
-                        typing_idx = 0
-                        state = "typing"
-                    else:  # Just outputs
-                        state = "output"
-                        output_idx = 0
+                y = panel_y + 70 + i * 70
+                
+                # Test name
+                draw.text((panel_x, y), name, font=self.font_body, fill=COLORS['text_white'])
+                
+                # Progress bar background
+                bar_x = panel_x + 300
+                bar_w = 400
+                bar_h = 24
+                draw.rounded_rectangle((bar_x, y + 5, bar_x + bar_w, y + 5 + bar_h),
+                                       radius=12, fill=COLORS['bg_light'])
+                
+                # Progress bar fill
+                fill_w = int(bar_w * (passed / total) * test_anim)
+                if fill_w > 0:
+                    draw.rounded_rectangle((bar_x, y + 5, bar_x + fill_w, y + 5 + bar_h),
+                                           radius=12, fill=color)
+                
+                # Count
+                draw.text((bar_x + bar_w + 20, y), f"{passed}/{total}", 
+                         font=self.font_body, fill=COLORS['success'])
             
-            # Process state machine
-            if state == "typing":
-                if typing_idx < len(current_cmd):
-                    typing_idx += 2  # Type 2 chars per frame
-                else:
-                    # Command done typing, add to terminal and show outputs
-                    prefix = "$ " if not current_cmd.startswith("/") else ""
-                    terminal_lines.append((f"{prefix}{current_cmd}", COLORS['text_primary']))
-                    current_cmd = ""
-                    typing_idx = 0
-                    
-                    # Start showing outputs
-                    cmd_data = demo_commands[segment_idx]
-                    if cmd_data and len(cmd_data) > 1 and cmd_data[1]:
-                        state = "output"
-                        output_idx = 0
+            # Total badge
+            total_y = panel_y + 450
+            draw.rounded_rectangle((panel_x, total_y, panel_x + 250, total_y + 60),
+                                   radius=30, fill=COLORS['success'])
+            draw.text((panel_x + 30, total_y + 12), "66/66 PASSED", 
+                     font=self.font_heading, fill=COLORS['text_white'])
+            
+            # Code snippet panel
+            code_x = 950
+            code_y = 180
+            code_w = 850
+            code_h = 400
+            
+            draw.rounded_rectangle((code_x, code_y, code_x + code_w, code_y + code_h),
+                                   radius=15, fill=COLORS['bg_medium'])
+            draw.text((code_x + 20, code_y + 15), "tests/test_security.py", 
+                     font=self.font_code, fill=COLORS['text_muted'])
+            
+            code_lines = [
+                "def test_pii_masking():",
+                "    masker = PIIMasker()",
+                "    ",
+                "    # Credit card masking",
+                "    text = 'Card: 4532-1234-5678-9012'",
+                "    result = masker.mask(text)",
+                "    assert result == 'Card: ****-****-****-9012'",
+                "    ",
+                "    # Email partial redaction",
+                "    text = 'Email: alice@email.com'",
+                "    result = masker.mask(text)",
+                "    assert 'ali***' in result",
+            ]
+            
+            for i, line in enumerate(code_lines):
+                code_anim = self.ease_out_cubic(max(0, min(1, (progress - 0.2 - i * 0.03) * 3)))
+                if code_anim > 0:
+                    y = code_y + 50 + i * 28
+                    # Syntax highlighting
+                    if line.startswith("def "):
+                        color = COLORS['primary']
+                    elif line.strip().startswith("#"):
+                        color = COLORS['text_muted']
+                    elif "assert" in line:
+                        color = COLORS['accent_pink']
+                    elif "'" in line or '"' in line:
+                        color = COLORS['success']
                     else:
-                        state = "idle"
-            
-            elif state == "output":
-                cmd_data = demo_commands[segment_idx]
-                if cmd_data and len(cmd_data) > 1:
-                    outputs = cmd_data[1]
-                    if output_idx < len(outputs):
-                        if frames_in_segment % 8 == 0:  # Show output every 8 frames
-                            terminal_lines.append(outputs[output_idx])
-                            output_idx += 1
-                    else:
-                        state = "idle"
-            
-            # Header
-            font_header = get_font(40, bold=True)
-            draw.text((100, 60), "Live System Demonstration", font=font_header, fill=COLORS['text_primary'])
-            
-            # Terminal
-            typing_text = current_cmd[:typing_idx] if state == "typing" else ""
-            self.draw_terminal(
-                draw, 100, 130, WIDTH - 200, HEIGHT - 270,
-                "Terminal — Multi-Agent Support CLI",
-                terminal_lines, typing_text, cursor_visible=(state in ["typing", "idle"])
-            )
-            
-            self.draw_progress_bar(draw, 0.4 + total_progress * 0.3, "Live Demo")
-            self.draw_subtitle_bar(draw, current_subtitle, segment_progress)
-            self.add_frame(img)
-    
-    def generate_security_scene(self, scene: SceneConfig):
-        """Generate security scene with better visuals"""
-        print(f"  Generating {scene.name} ({scene.total_frames} frames, {scene.total_duration:.1f}s)...")
+                        color = COLORS['text_white']
+                    draw.text((code_x + 20, y), line, font=self.font_code, fill=color)
         
-        segment_idx = 0
-        frames_in_segment = 0
-        segment_frames = int(scene.segments[0].actual_duration * FPS)
+        else:  # PII masking details
+            # PII Masking visualization
+            draw.text((100, 180), "PII Protection in Action", 
+                     font=self.font_heading, fill=COLORS['error'])
+            
+            examples = [
+                ("Credit Card", "4532-1234-5678-9012", "****-****-****-9012", COLORS['error']),
+                ("Email Address", "alice.johnson@email.com", "ali***@***.com", COLORS['warning']),
+                ("Internal ID", "CUST-2024-001", "[REDACTED]", COLORS['secondary']),
+                ("Phone Number", "(555) 123-4567", "(***) ***-4567", COLORS['primary']),
+            ]
+            
+            for i, (label, before, after, color) in enumerate(examples):
+                ex_anim = self.ease_out_cubic(max(0, min(1, (progress - i * 0.15) * 2)))
+                
+                y = 260 + i * 120
+                
+                # Label
+                draw.text((100, y), label, font=self.font_body, fill=COLORS['text_gray'])
+                
+                # Before box
+                draw.rounded_rectangle((100, y + 35, 500, y + 85), radius=10,
+                                       fill=COLORS['bg_medium'], outline=COLORS['border'])
+                draw.text((120, y + 45), f"Input: {before}", 
+                         font=self.font_code, fill=COLORS['text_white'])
+                
+                # Arrow
+                arrow_x = 520
+                draw.text((arrow_x, y + 45), "→", font=self.font_heading, fill=color)
+                
+                # After box
+                draw.rounded_rectangle((580, y + 35, 980, y + 85), radius=10,
+                                       fill=COLORS['bg_medium'], outline=color, width=2)
+                draw.text((600, y + 45), f"Output: {after}", 
+                         font=self.font_code, fill=color)
         
-        for f in range(scene.total_frames):
-            img, draw = self.create_frame()
-            
-            if frames_in_segment >= segment_frames and segment_idx < len(scene.segments) - 1:
-                segment_idx += 1
-                frames_in_segment = 0
-                segment_frames = int(scene.segments[segment_idx].actual_duration * FPS)
-            
-            current_subtitle = scene.segments[segment_idx].text
-            segment_progress = frames_in_segment / max(1, segment_frames)
-            frames_in_segment += 1
-            total_progress = f / max(1, scene.total_frames - 1)
-            
-            # Header
-            font_header = get_font(46, bold=True)
-            draw.text((90, 70), "Security & Evaluation", font=font_header, fill=COLORS['text_primary'])
-            
-            # Two-column layout with proper gap
-            col_w = 600
-            col_h = 530
-            col_y = 155
-            gap = 80
-            left_x = (WIDTH - 2 * col_w - gap) // 2
-            right_x = left_x + col_w + gap
-            
-            # Left column - Security features
-            sec_prog = ease_out_cubic(min(1, f / 45))
-            
-            # Shadow
-            draw.rounded_rectangle(
-                [left_x + 5, col_y + 5, left_x + col_w + 5, col_y + int(col_h * sec_prog) + 5],
-                radius=16, fill=(0, 0, 0)
-            )
-            draw.rounded_rectangle(
-                [left_x, col_y, left_x + col_w, col_y + int(col_h * sec_prog)],
-                radius=16, fill=COLORS['bg_card']
-            )
-            draw.rounded_rectangle(
-                [left_x, col_y, left_x + col_w, col_y + int(col_h * sec_prog)],
-                radius=16, outline=COLORS['accent_red'], width=3
-            )
-            
-            if sec_prog > 0.3:
-                # Header
-                draw.rounded_rectangle(
-                    [left_x, col_y, left_x + col_w, col_y + 55],
-                    radius=16, fill=COLORS['accent_red']
-                )
-                draw.rectangle([left_x, col_y + 40, left_x + col_w, col_y + 55], fill=COLORS['accent_red'])
-                
-                font_section = get_font(22, bold=True)
-                draw.text((left_x + 25, col_y + 15), "Security Features",
-                         font=font_section, fill=COLORS['bg_primary'])
-                
-                features = [
-                    ("🔒", "PII Masking", "Automatic data protection"),
-                    ("🛡️", "Access Control", "Owner verification required"),
-                    ("⚠️", "Session Lockout", "3 failed attempts = locked"),
-                    ("📋", "Audit Logging", "All operations tracked"),
-                ]
-                
-                font_title = get_font(22, bold=True)
-                font_desc = get_font(17)
-                
-                for i, (icon, title, desc) in enumerate(features):
-                    show_at = 50 + i * 30
-                    if f > show_at:
-                        fy = col_y + 80 + i * 110
-                        
-                        # Feature row with background
-                        draw.rounded_rectangle(
-                            [left_x + 20, fy, left_x + col_w - 20, fy + 90],
-                            radius=10, fill=COLORS['bg_tertiary']
-                        )
-                        
-                        # Checkmark circle
-                        draw.ellipse([left_x + 35, fy + 15, left_x + 65, fy + 45],
-                                   fill=COLORS['accent_green'])
-                        font_check = get_font(18, bold=True)
-                        draw.text((left_x + 43, fy + 18), "✓", font=font_check, fill=COLORS['bg_primary'])
-                        
-                        draw.text((left_x + 80, fy + 18), title, font=font_title, fill=COLORS['text_primary'])
-                        draw.text((left_x + 80, fy + 52), desc, font=font_desc, fill=COLORS['text_secondary'])
-            
-            # Right column - Test results
-            if f > 80:
-                test_prog = ease_out_cubic(min(1, (f - 80) / 45))
-                
-                draw.rounded_rectangle(
-                    [right_x + 5, col_y + 5, right_x + col_w + 5, col_y + int(col_h * test_prog) + 5],
-                    radius=16, fill=(0, 0, 0)
-                )
-                draw.rounded_rectangle(
-                    [right_x, col_y, right_x + col_w, col_y + int(col_h * test_prog)],
-                    radius=16, fill=COLORS['bg_card']
-                )
-                draw.rounded_rectangle(
-                    [right_x, col_y, right_x + col_w, col_y + int(col_h * test_prog)],
-                    radius=16, outline=COLORS['accent_green'], width=3
-                )
-                
-                if test_prog > 0.3:
-                    # Header
-                    draw.rounded_rectangle(
-                        [right_x, col_y, right_x + col_w, col_y + 55],
-                        radius=16, fill=COLORS['accent_green']
-                    )
-                    draw.rectangle([right_x, col_y + 40, right_x + col_w, col_y + 55], fill=COLORS['accent_green'])
-                    
-                    draw.text((right_x + 25, col_y + 15), "Test Coverage",
-                             font=font_section, fill=COLORS['bg_primary'])
-                    
-                    # Animated counter
-                    count_prog = min(1, (f - 100) / 90) if f > 100 else 0
-                    test_count = int(66 * count_prog)
-                    
-                    font_big = get_font(90, bold=True)
-                    draw.text((right_x + 40, col_y + 70), f"{test_count}/66",
-                             font=font_big, fill=COLORS['accent_green'])
-                    
-                    font_label = get_font(26)
-                    draw.text((right_x + 40, col_y + 175), "tests passing",
-                             font=font_label, fill=COLORS['text_primary'])
-                    
-                    # Progress bar
-                    bar_y = col_y + 220
-                    draw.rounded_rectangle(
-                        [right_x + 40, bar_y, right_x + col_w - 40, bar_y + 16],
-                        radius=8, fill=COLORS['border']
-                    )
-                    bar_w = int((col_w - 80) * count_prog)
-                    if bar_w > 4:
-                        draw.rounded_rectangle(
-                            [right_x + 40, bar_y, right_x + 40 + bar_w, bar_y + 16],
-                            radius=8, fill=COLORS['accent_green']
-                        )
-                    
-                    # Categories
-                    if f > 160:
-                        categories = [
-                            ("Intent Classification", 9, COLORS['accent_blue']),
-                            ("Security & PII", 13, COLORS['accent_red']),
-                            ("Orchestrator", 13, COLORS['accent_purple']),
-                            ("Session/Memory", 16, COLORS['accent_yellow']),
-                            ("Tools/MCP", 15, COLORS['accent_cyan']),
-                        ]
-                        
-                        font_cat = get_font(18)
-                        for i, (cat, count, color) in enumerate(categories):
-                            show_cat = f > 160 + i * 15
-                            if show_cat:
-                                cy = col_y + 265 + i * 48
-                                
-                                draw.ellipse([right_x + 45, cy + 4, right_x + 59, cy + 18], fill=color)
-                                draw.text((right_x + 70, cy), cat, font=font_cat, fill=COLORS['text_secondary'])
-                                draw.text((right_x + 360, cy), f"{count} tests", font=font_cat, fill=color)
-            
-            self.draw_progress_bar(draw, 0.7 + total_progress * 0.15, "Security & Evaluation")
-            self.draw_subtitle_bar(draw, current_subtitle, segment_progress)
-            self.add_frame(img)
+        return img
     
-    def generate_conclusion_scene(self, scene: SceneConfig):
-        """Generate conclusion scene"""
-        print(f"  Generating {scene.name} ({scene.total_frames} frames, {scene.total_duration:.1f}s)...")
+    def render_conclusion_scene(self, block: NarrationBlock, frame_in_block: int,
+                                 total_frames: int) -> Image.Image:
+        """Render conclusion scene"""
+        img = self.create_base_frame()
+        draw = ImageDraw.Draw(img)
         
-        segment_idx = 0
-        frames_in_segment = 0
-        segment_frames = int(scene.segments[0].actual_duration * FPS)
+        progress = frame_in_block / total_frames
         
-        concepts = [
-            ("✓", "Multi-Agent Architecture", COLORS['accent_blue']),
-            ("✓", "MCP Tool Server", COLORS['accent_cyan']),
-            ("✓", "Session & Memory", COLORS['accent_yellow']),
-            ("✓", "Security Guardrails", COLORS['accent_red']),
-            ("✓", "PII Masking", COLORS['accent_purple']),
-            ("✓", "66 Automated Tests", COLORS['accent_green']),
-            ("✓", "CLI & REST API", COLORS['accent_orange']),
-        ]
+        # Title
+        self.draw_text_centered(draw, "Summary & Next Steps", 100, 
+                               self.font_title, COLORS['text_white'])
         
-        for f in range(scene.total_frames):
-            img, draw = self.create_frame()
+        if "business value" in block.text.lower():
+            # Key achievements
+            achievements = [
+                ("🤖", "Multi-Agent Architecture", "4 specialized agents working together"),
+                ("🔧", "MCP Tool Integration", "6 business tools via protocol"),
+                ("🧠", "Session Memory", "Context-aware conversations"),
+                ("🛡️", "Security First", "PII masking, access control, audit"),
+                ("✓", "Fully Tested", "66 automated tests"),
+                ("⚡", "Instant Response", "< 1 second processing"),
+            ]
             
-            if frames_in_segment >= segment_frames and segment_idx < len(scene.segments) - 1:
-                segment_idx += 1
-                frames_in_segment = 0
-                segment_frames = int(scene.segments[segment_idx].actual_duration * FPS)
+            cols = 2
+            col_width = 700
+            start_x = (WIDTH - cols * col_width) // 2
             
-            current_subtitle = scene.segments[segment_idx].text
-            segment_progress = frames_in_segment / max(1, segment_frames)
-            frames_in_segment += 1
-            total_progress = f / max(1, scene.total_frames - 1)
-            
-            cx = WIDTH // 2
-            
-            # Header
-            font_header = get_font(52, bold=True)
-            title = "Implementation Complete"
-            bbox = draw.textbbox((0, 0), title, font=font_header)
-            
-            # Shadow
-            draw.text((cx - (bbox[2]-bbox[0])//2 + 3, 83), title, font=font_header, fill=(0, 0, 0))
-            draw.text((cx - (bbox[2]-bbox[0])//2, 80), title, font=font_header, fill=COLORS['text_primary'])
-            
-            # Checklist with animations
-            list_y = 175
-            font_item = get_font(30)
-            
-            for i, (check, concept, color) in enumerate(concepts):
-                show_at = 25 + i * 15
-                if f > show_at:
-                    prog = ease_out_cubic(min(1, (f - show_at) / 20))
-                    offset = int(50 * (1 - prog))
-                    
-                    y = list_y + i * 58
-                    
-                    # Checkmark circle
-                    draw.ellipse([cx - 300 + offset, y + 4, cx - 270 + offset, y + 34],
-                               fill=color)
-                    font_check = get_font(18, bold=True)
-                    draw.text((cx - 292 + offset, y + 8), check, font=font_check, fill=COLORS['bg_primary'])
-                    
-                    draw.text((cx - 250 + offset, y + 2), concept,
-                             font=font_item, fill=COLORS['text_primary'])
-            
-            # GitHub link box
-            if f > 160:
-                link_prog = ease_out_cubic(min(1, (f - 160) / 30))
-                link_y = HEIGHT - 200
-                link_w = 700
-                link_h = 60
+            for i, (icon, title, desc) in enumerate(achievements):
+                ach_anim = self.ease_out_cubic(max(0, min(1, (progress - i * 0.08) * 2.5)))
                 
-                # Shadow
-                draw.rounded_rectangle(
-                    [cx - link_w//2 + 4, link_y + 4, cx + link_w//2 + 4, link_y + link_h + 4],
-                    radius=30, fill=(0, 0, 0)
-                )
-                draw.rounded_rectangle(
-                    [cx - link_w//2, link_y, cx + link_w//2, link_y + link_h],
-                    radius=30, fill=COLORS['bg_card']
-                )
-                draw.rounded_rectangle(
-                    [cx - link_w//2, link_y, cx + link_w//2, link_y + link_h],
-                    radius=30, outline=COLORS['accent_blue'], width=2
-                )
+                col = i % cols
+                row = i // cols
                 
-                font_link = get_font(24)
-                link_text = "github.com/Trungnef/ai-agents-business-support"
-                bbox = draw.textbbox((0, 0), link_text, font=font_link)
-                draw.text((cx - (bbox[2]-bbox[0])//2, link_y + 17), link_text,
-                         font=font_link, fill=COLORS['accent_blue'])
-            
-            # Thank you message
-            if f > 200:
-                thanks_prog = ease_out_cubic(min(1, (f - 200) / 30))
-                font_thanks = get_font(42, bold=True)
-                thanks = "Thank You for Watching!"
-                bbox = draw.textbbox((0, 0), thanks, font=font_thanks)
+                x = start_x + col * col_width
+                y = 220 + row * 130 + int((1 - ach_anim) * 30)
                 
-                thanks_y = HEIGHT - 110 + int(30 * (1 - thanks_prog))
-                draw.text((cx - (bbox[2]-bbox[0])//2 + 2, thanks_y + 2), thanks,
-                         font=font_thanks, fill=(0, 0, 0))
-                draw.text((cx - (bbox[2]-bbox[0])//2, thanks_y), thanks,
-                         font=font_thanks, fill=COLORS['accent_green'])
-            
-            self.draw_progress_bar(draw, 0.85 + total_progress * 0.15, "Conclusion")
-            self.draw_subtitle_bar(draw, current_subtitle, segment_progress)
-            self.add_frame(img)
-    
-    def generate_video(self):
-        """Generate all scenes"""
-        print("\n" + "=" * 60)
-        print("GENERATING VIDEO FRAMES")
-        print("=" * 60)
+                # Card
+                card_w = 650
+                card_h = 100
+                self.draw_gradient_rect(img, (x, y, x + card_w, y + card_h),
+                                        COLORS['bg_medium'], COLORS['bg_light'], radius=15)
+                
+                # Icon circle
+                draw.ellipse((x + 20, y + 25, x + 70, y + 75), fill=COLORS['primary'])
+                
+                # Text
+                draw.text((x + 90, y + 20), title, font=self.font_heading, fill=COLORS['text_white'])
+                draw.text((x + 90, y + 60), desc, font=self.font_body, fill=COLORS['text_gray'])
         
-        for scene in SCENES:
-            if scene.name == "intro":
-                self.generate_intro_scene(scene)
-            elif scene.name == "problem":
-                self.generate_problem_scene(scene)
-            elif scene.name == "architecture":
-                self.generate_architecture_scene(scene)
-            elif scene.name == "demo":
-                self.generate_demo_scene(scene)
-            elif scene.name == "security":
-                self.generate_security_scene(scene)
-            elif scene.name == "conclusion":
-                self.generate_conclusion_scene(scene)
+        else:  # Thank you / GitHub
+            # Big thank you
+            self.draw_text_centered(draw, "Thank You!", 250, self.font_title, COLORS['primary'])
             
-            print(f"    Total frames so far: {len(self.frames)}")
+            # GitHub link
+            github_y = 380
+            github_text = "github.com/Trungnef/ai-agents-business-support"
+            
+            # GitHub card
+            card_w = 800
+            card_h = 100
+            card_x = (WIDTH - card_w) // 2
+            
+            self.draw_gradient_rect(img, (card_x, github_y, card_x + card_w, github_y + card_h),
+                                    COLORS['bg_medium'], COLORS['bg_light'], radius=20)
+            draw.rounded_rectangle((card_x, github_y, card_x + card_w, github_y + card_h),
+                                   radius=20, outline=COLORS['text_white'], width=2)
+            
+            self.draw_text_centered(draw, "Open Source on GitHub", github_y + 15, 
+                                   self.font_body, COLORS['text_gray'])
+            self.draw_text_centered(draw, github_text, github_y + 50, 
+                                   self.font_heading, COLORS['text_white'])
+            
+            # Feedback request
+            feedback_y = 520
+            self.draw_text_centered(draw, "I welcome your feedback!", feedback_y, 
+                                   self.font_subheading, COLORS['text_gray'])
+            
+            # Course concepts summary
+            concepts_y = 600
+            concepts = ["Multi-Agent", "MCP Tools", "Sessions", "Memory", 
+                       "Security", "Testing", "Orchestration"]
+            
+            concept_width = 180
+            gap = 20
+            total_w = len(concepts) * concept_width + (len(concepts) - 1) * gap
+            start_x = (WIDTH - total_w) // 2
+            
+            for i, concept in enumerate(concepts):
+                con_anim = self.ease_out_cubic(max(0, min(1, (progress - 0.3 - i * 0.05) * 3)))
+                
+                x = start_x + i * (concept_width + gap)
+                y = concepts_y + int((1 - con_anim) * 20)
+                
+                draw.rounded_rectangle((x, y, x + concept_width, y + 50), radius=25,
+                                       fill=COLORS['primary_dark'])
+                
+                con_bbox = draw.textbbox((0, 0), concept, font=self.font_small)
+                con_x = x + (concept_width - (con_bbox[2] - con_bbox[0])) // 2
+                draw.text((con_x, y + 13), concept, font=self.font_small, fill=COLORS['text_white'])
         
-        return self.frames
-
-
-def write_video(frames: List[np.ndarray]) -> Path:
-    """Write frames to video file"""
-    video_path = OUTPUT_DIR / "temp_video_v4.mp4"
+        return img
     
-    print(f"\nWriting {len(frames)} frames to video...")
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(str(video_path), fourcc, FPS, (WIDTH, HEIGHT))
+    def ease_out_cubic(self, t: float) -> float:
+        """Easing function for smooth animations"""
+        return 1 - pow(1 - t, 3)
     
-    for i, frame in enumerate(frames):
-        out.write(frame)
-        if (i + 1) % 500 == 0:
-            print(f"  {i + 1}/{len(frames)} frames written")
+    def render_frame(self, block: NarrationBlock, frame_in_block: int, 
+                     total_frames: int, total_progress: float) -> np.ndarray:
+        """Render a single frame based on current block"""
+        
+        # Select scene renderer
+        scene = block.scene
+        if scene == "intro":
+            img = self.render_intro_scene(block, frame_in_block, total_frames)
+        elif scene == "problem":
+            img = self.render_problem_scene(block, frame_in_block, total_frames)
+        elif scene == "architecture":
+            img = self.render_architecture_scene(block, frame_in_block, total_frames)
+        elif scene == "demo":
+            img = self.render_demo_scene(block, frame_in_block, total_frames)
+        elif scene == "security":
+            img = self.render_security_scene(block, frame_in_block, total_frames)
+        elif scene == "conclusion":
+            img = self.render_conclusion_scene(block, frame_in_block, total_frames)
+        else:
+            img = self.create_base_frame()
+        
+        # Add common elements
+        draw = ImageDraw.Draw(img)
+        
+        # Progress bar
+        self.draw_progress_bar(img, total_progress, block.scene)
+        
+        # Subtitle
+        self.draw_subtitle_bar(img, block.text, total_progress)
+        
+        # Convert to OpenCV format
+        return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
     
-    out.release()
-    print(f"Temp video saved: {video_path}")
-    return video_path
-
-
-def combine_av(video_path: Path, audio_path: Path) -> Path:
-    """Combine video and audio with ffmpeg"""
-    final_path = OUTPUT_DIR / "multi_agent_support_demo.mp4"
+    async def generate_audio(self):
+        """Generate audio for all narration blocks"""
+        os.makedirs(AUDIO_DIR, exist_ok=True)
+        
+        print("Generating audio segments...")
+        
+        for i, block in enumerate(NARRATION_BLOCKS):
+            output_file = f"{AUDIO_DIR}/segment_{i:02d}.mp3"
+            
+            communicate = edge_tts.Communicate(block.text, "en-US-AriaNeural")
+            await communicate.save(output_file)
+            
+            print(f"  Generated: segment_{i:02d}.mp3 ({block.word_count} words, ~{block.duration_sec:.1f}s)")
+        
+        # Concatenate all audio
+        concat_file = f"{AUDIO_DIR}/concat.txt"
+        with open(concat_file, 'w') as f:
+            for i in range(len(NARRATION_BLOCKS)):
+                f.write(f"file 'segment_{i:02d}.mp3'\n")
+        
+        full_audio = f"{AUDIO_DIR}/full_narration.mp3"
+        subprocess.run([
+            'ffmpeg', '-y', '-f', 'concat', '-safe', '0',
+            '-i', concat_file, '-c', 'copy', full_audio
+        ], capture_output=True)
+        
+        print(f"Combined audio saved to: {full_audio}")
+        
+        # Get actual audio durations using ffprobe
+        actual_durations = []
+        for i in range(len(NARRATION_BLOCKS)):
+            segment_file = f"{AUDIO_DIR}/segment_{i:02d}.mp3"
+            result = subprocess.run([
+                'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1', segment_file
+            ], capture_output=True, text=True)
+            duration = float(result.stdout.strip())
+            actual_durations.append(duration)
+            print(f"  Actual duration segment_{i:02d}: {duration:.2f}s")
+        
+        return actual_durations
     
-    print("\nCombining video and audio...")
+    def generate_video(self, actual_durations: List[float]):
+        """Generate video frames synchronized with audio"""
+        
+        video_file = f"{OUTPUT_DIR}/multi_agent_support_demo.mp4"
+        
+        # Calculate total duration and frames per block
+        total_duration = sum(actual_durations)
+        total_frames = int(total_duration * FPS)
+        
+        print(f"\nGenerating video: {total_frames} frames ({total_duration:.1f}s)")
+        
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(video_file, fourcc, FPS, (WIDTH, HEIGHT))
+        
+        frame_count = 0
+        cumulative_time = 0
+        
+        for block_idx, block in enumerate(NARRATION_BLOCKS):
+            block_duration = actual_durations[block_idx]
+            block_frames = int(block_duration * FPS)
+            
+            print(f"  Rendering: {block.scene} - '{block.text[:50]}...' ({block_frames} frames)")
+            
+            for frame_in_block in range(block_frames):
+                # Calculate progress
+                total_progress = (cumulative_time + frame_in_block / FPS) / total_duration
+                
+                # Render frame
+                frame = self.render_frame(block, frame_in_block, block_frames, total_progress)
+                out.write(frame)
+                frame_count += 1
+            
+            cumulative_time += block_duration
+        
+        out.release()
+        print(f"\nVideo saved: {video_file} ({frame_count} frames)")
+        
+        return video_file
     
-    try:
-        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
-    except:
-        print("ffmpeg not found, saving video without audio")
-        video_path.rename(final_path)
-        return final_path
-    
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(video_path),
-        "-i", str(audio_path),
-        "-c:v", "libx264",
-        "-preset", "medium",
-        "-crf", "18",  # Higher quality
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-        "-shortest",  # Match shortest stream
-        "-movflags", "+faststart",
-        str(final_path)
-    ]
-    
-    try:
-        result = subprocess.run(cmd, capture_output=True, check=True)
-        video_path.unlink(missing_ok=True)
-        print(f"Final video: {final_path}")
-    except subprocess.CalledProcessError as e:
-        print(f"FFmpeg error: {e}")
-        print(f"stderr: {e.stderr.decode()}")
-        video_path.rename(final_path)
-    
-    return final_path
-
-
-def cleanup_temp_files():
-    """Clean up temporary audio files"""
-    print("\nCleaning up temporary files...")
-    for f in AUDIO_DIR.glob("segment_*.mp3"):
-        f.unlink(missing_ok=True)
-    
-    combined = OUTPUT_DIR / "combined_narration_v4.mp3"
-    if combined.exists():
-        combined.unlink()
-
-
-def verify(path: Path):
-    """Verify output video"""
-    print("\n" + "=" * 60)
-    print("VERIFICATION")
-    print("=" * 60)
-    
-    if not path.exists():
-        print("ERROR: Video file not found!")
-        return False
-    
-    cap = cv2.VideoCapture(str(path))
-    frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    duration = frames / fps if fps else 0
-    size = path.stat().st_size / (1024 * 1024)
-    cap.release()
-    
-    print(f"Resolution: {w}x{h}")
-    print(f"FPS: {fps}")
-    print(f"Frames: {frames}")
-    print(f"Duration: {duration:.1f}s ({duration/60:.1f} min)")
-    print(f"Size: {size:.1f} MB")
-    
-    # Calculate expected vs actual
-    total_expected = sum(scene.total_duration for scene in SCENES)
-    print(f"\nExpected duration: {total_expected:.1f}s")
-    print(f"Actual duration: {duration:.1f}s")
-    print(f"Difference: {abs(duration - total_expected):.1f}s")
-    
-    print("\n✓ VERIFICATION COMPLETE")
-    return True
-
+    def combine_audio_video(self, video_file: str):
+        """Combine video with audio using ffmpeg"""
+        
+        audio_file = f"{AUDIO_DIR}/full_narration.mp3"
+        output_file = f"{OUTPUT_DIR}/multi_agent_support_demo_final.mp4"
+        
+        print(f"\nCombining video + audio...")
+        
+        subprocess.run([
+            'ffmpeg', '-y',
+            '-i', video_file,
+            '-i', audio_file,
+            '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+            '-c:a', 'aac', '-b:a', '192k',
+            '-shortest',
+            output_file
+        ], capture_output=True)
+        
+        # Replace original with final
+        os.replace(output_file, video_file)
+        
+        print(f"Final video saved: {video_file}")
+        
+        # Get final video info
+        result = subprocess.run([
+            'ffprobe', '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height,r_frame_rate,nb_frames',
+            '-show_entries', 'format=duration,size',
+            '-of', 'json', video_file
+        ], capture_output=True, text=True)
+        
+        print(f"\nVideo info:\n{result.stdout}")
 
 async def main():
-    print("\n" + "=" * 60)
-    print("VIDEO GENERATOR v4 - Perfect Voice-Subtitle Sync")
+    print("=" * 60)
+    print("Video Demo Generator v4")
+    print("Perfect Voice-Subtitle Sync + Beautiful Diagrams")
     print("=" * 60)
     
-    # Step 1: Generate audio for each segment
-    await generate_all_audio()
+    generator = VideoGenerator()
     
-    # Step 2: Combine audio segments
-    audio_path = combine_audio_segments()
+    # Step 1: Generate audio and get actual durations
+    actual_durations = await generator.generate_audio()
     
-    # Step 3: Generate video frames (using actual audio durations)
-    gen = VideoGenerator()
-    frames = gen.generate_video()
+    # Step 2: Generate video synchronized with audio durations
+    video_file = generator.generate_video(actual_durations)
     
-    # Step 4: Write video
-    video_path = write_video(frames)
-    
-    # Step 5: Combine video and audio
-    final_path = combine_av(video_path, audio_path)
-    
-    # Step 6: Verify
-    verify(final_path)
-    
-    # Step 7: Cleanup
-    cleanup_temp_files()
+    # Step 3: Combine audio and video
+    generator.combine_audio_video(video_file)
     
     print("\n" + "=" * 60)
     print("COMPLETE!")
-    print(f"Output: {final_path}")
     print("=" * 60)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
