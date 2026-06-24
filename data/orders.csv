@@ -1,0 +1,16 @@
+order_id,customer_id,customer_email,status,total_amount,items_count,created_at,shipped_at,delivered_at,tracking_number,carrier,payment_method_last4,internal_notes
+ORD-2024-001,CUST001,alice.johnson@email.com,delivered,149.99,3,2024-05-01T10:00:00Z,2024-05-02T14:00:00Z,2024-05-05T11:30:00Z,1Z999AA10123456784,UPS,4242,VIP customer - priority handling
+ORD-2024-002,CUST001,alice.johnson@email.com,shipped,89.50,2,2024-06-10T09:30:00Z,2024-06-11T16:00:00Z,,1Z999AA10123456785,UPS,4242,
+ORD-2024-003,CUST002,bob.smith@email.com,processing,249.00,1,2024-06-18T14:20:00Z,,,,,1234,Large item - warehouse B
+ORD-2024-004,CUST002,bob.smith@email.com,delivered,35.99,1,2024-04-15T11:00:00Z,2024-04-16T09:00:00Z,2024-04-19T14:00:00Z,9400111899223456789012,USPS,5678,
+ORD-2024-005,CUST003,carol.white@email.com,return_requested,199.99,2,2024-05-20T16:45:00Z,2024-05-21T10:00:00Z,2024-05-24T13:00:00Z,1Z999AA10123456786,UPS,9012,Customer reported item damaged
+ORD-2024-006,CUST004,david.brown@email.com,refunded,75.00,1,2024-03-10T08:30:00Z,2024-03-11T12:00:00Z,2024-03-14T10:00:00Z,9400111899223456789013,USPS,3456,Refund processed 2024-03-20
+ORD-2024-007,CUST005,emma.davis@email.com,out_for_delivery,129.99,4,2024-06-20T10:15:00Z,2024-06-21T08:00:00Z,,FX123456789012,FedEx,7890,
+ORD-2024-008,CUST006,frank.miller@email.com,cancelled,450.00,5,2024-06-15T13:00:00Z,,,,,2345,Account suspended - order cancelled
+ORD-2024-009,CUST007,grace.wilson@email.com,confirmed,899.99,1,2024-06-22T09:00:00Z,,,,,6789,Premium item - extra insurance
+ORD-2024-010,CUST008,henry.moore@email.com,pending,49.99,2,2024-06-23T15:30:00Z,,,,,0123,Payment verification pending
+ORD-2024-011,CUST009,iris.taylor@email.com,shipped,175.50,3,2024-06-19T11:45:00Z,2024-06-20T14:30:00Z,,1Z999AA10123456787,UPS,4567,
+ORD-2024-012,CUST010,jack.anderson@email.com,delivered,62.00,2,2024-05-28T10:00:00Z,2024-05-29T09:00:00Z,2024-06-01T16:00:00Z,9400111899223456789014,USPS,8901,
+ORD-2024-013,CUST001,alice.johnson@email.com,pending,320.00,2,2024-06-24T08:00:00Z,,,,,4242,Awaiting stock
+ORD-2024-014,CUST003,carol.white@email.com,shipped,55.99,1,2024-06-21T13:20:00Z,2024-06-22T10:00:00Z,,FX123456789013,FedEx,9012,
+ORD-2024-015,CUST007,grace.wilson@email.com,delivered,1250.00,3,2024-04-05T14:00:00Z,2024-04-06T11:00:00Z,2024-04-10T09:30:00Z,1Z999AA10123456788,UPS,6789,Platinum member - signature required

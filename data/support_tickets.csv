@@ -1,0 +1,18 @@
+ticket_id,customer_email,intent,priority,summary,status,created_at,updated_at,assigned_to,resolution_notes
+TKT-2024-001,carol.white@email.com,refund_request,high,Customer reports damaged item in order ORD-2024-005,in_progress,2024-05-25T10:00:00Z,2024-06-01T14:30:00Z,support_team_1,Awaiting return shipment
+TKT-2024-002,frank.miller@email.com,account_access,urgent,Account suspended - customer requesting review,escalated,2024-06-16T09:00:00Z,2024-06-18T11:00:00Z,security_team,Under security review
+TKT-2024-003,bob.smith@email.com,order_status,low,Customer inquiring about processing time,resolved,2024-06-19T15:00:00Z,2024-06-19T15:30:00Z,bot,Automated response sent - order in warehouse
+TKT-2026-D75FC6,test@email.com,human_escalation,urgent,I want to speak to a human agent immediately!,open,2026-06-24T04:42:20.839173Z,2026-06-24T04:42:20.839173Z,support_team_1,
+TKT-2026-3AC960,test@email.com,billing_issue,urgent,This is urgent! I was charged twice and I need this fixed NOW!,open,2026-06-24T04:42:20.853696Z,2026-06-24T04:42:20.853696Z,billing_team,
+TKT-2026-60F92A,unknown@customer.com,other,high,"Hello, I need help",open,2026-06-24T04:42:21.089432Z,2026-06-24T04:42:21.089432Z,support_team_1,
+TKT-2026-7319DB,test@email.com,human_escalation,urgent,I want to speak to a human agent immediately!,open,2026-06-24T04:42:44.965920Z,2026-06-24T04:42:44.965920Z,support_team_1,
+TKT-2026-C5F4C7,test@email.com,billing_issue,urgent,This is urgent! I was charged twice and I need this fixed NOW!,open,2026-06-24T04:42:44.978469Z,2026-06-24T04:42:44.978469Z,billing_team,
+TKT-2026-47CBF8,test@email.com,human_escalation,urgent,I want to speak to a human agent immediately!,open,2026-06-24T04:42:50.083073Z,2026-06-24T04:42:50.083073Z,support_team_1,
+TKT-2026-F87955,test@email.com,billing_issue,urgent,This is urgent! I was charged twice and I need this fixed NOW!,open,2026-06-24T04:42:50.094589Z,2026-06-24T04:42:50.094589Z,billing_team,
+TKT-2026-798E38,unknown@customer.com,other,high,"Hello, I need help",open,2026-06-24T04:42:50.327663Z,2026-06-24T04:42:50.327663Z,support_team_1,
+TKT-2026-2AF2AD,test@email.com,human_escalation,urgent,I want to speak to a human agent immediately!,open,2026-06-24T04:57:53.503211Z,2026-06-24T04:57:53.503211Z,support_team_1,
+TKT-2026-C37678,test@email.com,billing_issue,urgent,This is urgent! I was charged twice and I need this fixed NOW!,open,2026-06-24T04:57:53.528842Z,2026-06-24T04:57:53.528842Z,billing_team,
+TKT-2026-ECC85B,unknown@customer.com,other,high,"Hello, I need help",open,2026-06-24T04:57:53.755252Z,2026-06-24T04:57:53.755252Z,support_team_1,
+TKT-2026-200189,test@email.com,human_escalation,urgent,I want to speak to a human agent immediately!,open,2026-06-24T06:49:44.063461Z,2026-06-24T06:49:44.063461Z,support_team_1,
+TKT-2026-BE4181,test@email.com,billing_issue,urgent,This is urgent! I was charged twice and I need this fixed NOW!,open,2026-06-24T06:49:44.095992Z,2026-06-24T06:49:44.095992Z,billing_team,
+TKT-2026-B8CD58,unknown@customer.com,other,high,"Hello, I need help",open,2026-06-24T06:49:44.331338Z,2026-06-24T06:49:44.331338Z,support_team_1,

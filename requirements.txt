@@ -1,0 +1,29 @@
+# Core dependencies
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# LLM / Agent frameworks
+google-generativeai>=0.5.0
+# google-adk  # Uncomment if ADK package becomes available
+
+# MCP Server
+mcp>=1.0.0  # Official MCP Python SDK
+
+# API Framework (optional demo)
+fastapi>=0.110.0
+uvicorn>=0.27.0
+
+# Data handling
+pandas>=2.0.0
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+
+# Logging & utilities
+structlog>=24.0.0
+rich>=13.0.0
+
+# Type checking (dev)
+mypy>=1.8.0

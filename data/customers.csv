@@ -1,0 +1,11 @@
+customer_id,email,name,phone,created_at,account_status,loyalty_tier
+CUST001,alice.johnson@email.com,Alice Johnson,+1-555-0101,2023-01-15T10:30:00Z,active,gold
+CUST002,bob.smith@email.com,Bob Smith,+1-555-0102,2023-03-22T14:45:00Z,active,silver
+CUST003,carol.white@email.com,Carol White,+1-555-0103,2023-06-10T09:00:00Z,active,bronze
+CUST004,david.brown@email.com,David Brown,+1-555-0104,2022-11-05T16:20:00Z,active,gold
+CUST005,emma.davis@email.com,Emma Davis,+1-555-0105,2024-01-08T11:15:00Z,active,bronze
+CUST006,frank.miller@email.com,Frank Miller,+1-555-0106,2023-08-30T08:00:00Z,suspended,silver
+CUST007,grace.wilson@email.com,Grace Wilson,+1-555-0107,2023-05-18T13:30:00Z,active,platinum
+CUST008,henry.moore@email.com,Henry Moore,+1-555-0108,2024-02-14T10:00:00Z,active,bronze
+CUST009,iris.taylor@email.com,Iris Taylor,+1-555-0109,2023-09-25T15:45:00Z,active,silver
+CUST010,jack.anderson@email.com,Jack Anderson,+1-555-0110,2023-12-01T09:30:00Z,active,bronze

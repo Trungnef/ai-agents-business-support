@@ -1,0 +1,77 @@
+{
+  "default_policy": {
+    "refund_window_days": 30,
+    "conditions": [
+      "Item must be unused and in original packaging",
+      "Return shipping may be deducted for non-defective items",
+      "Digital products are non-refundable after download"
+    ],
+    "refund_method": "original_payment",
+    "processing_time_days": 5
+  },
+  "status_eligibility": {
+    "pending": {
+      "eligible": true,
+      "reason": "Order can be cancelled before processing"
+    },
+    "confirmed": {
+      "eligible": true,
+      "reason": "Order can be cancelled before shipment"
+    },
+    "processing": {
+      "eligible": true,
+      "reason": "Order may still be cancellable, please contact support"
+    },
+    "shipped": {
+      "eligible": true,
+      "reason": "Please refuse delivery or return after receipt"
+    },
+    "out_for_delivery": {
+      "eligible": true,
+      "reason": "Please refuse delivery or return after receipt"
+    },
+    "delivered": {
+      "eligible": true,
+      "reason": "Standard return policy applies from delivery date"
+    },
+    "cancelled": {
+      "eligible": false,
+      "reason": "Order was already cancelled"
+    },
+    "refunded": {
+      "eligible": false,
+      "reason": "Refund was already processed"
+    },
+    "return_requested": {
+      "eligible": false,
+      "reason": "Return is already in progress"
+    },
+    "returned": {
+      "eligible": false,
+      "reason": "Item was already returned and refunded"
+    }
+  },
+  "special_conditions": {
+    "damaged_item": {
+      "eligible": true,
+      "extended_window_days": 60,
+      "free_return_shipping": true,
+      "reason": "Damaged items qualify for extended return window"
+    },
+    "wrong_item": {
+      "eligible": true,
+      "free_return_shipping": true,
+      "priority_processing": true,
+      "reason": "Wrong item shipped - expedited refund available"
+    },
+    "loyalty_gold": {
+      "extended_window_days": 45,
+      "free_return_shipping": true
+    },
+    "loyalty_platinum": {
+      "extended_window_days": 60,
+      "free_return_shipping": true,
+      "instant_refund": true
+    }
+  }
+}
