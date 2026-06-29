@@ -1,0 +1,24 @@
+# Video Generator Dependencies
+# Install with: pip install -r video_generator/requirements.txt
+
+# Core video processing
+moviepy>=2.0.0
+Pillow>=10.0.0
+
+# Audio processing
+pydub>=0.25.1
+
+# Text-to-Speech engines
+edge-tts>=6.1.0       # Microsoft Edge TTS (recommended - high quality, free)
+gTTS>=2.4.0           # Google Text-to-Speech (free, requires internet)
+pyttsx3>=2.90         # Offline TTS (lower quality but works offline)
+
+# FFmpeg is required for video processing
+# Install separately:
+# - Windows: choco install ffmpeg  OR  download from https://ffmpeg.org/download.html
+# - macOS: brew install ffmpeg
+# - Linux: sudo apt install ffmpeg
+
+# Optional: For better font rendering
+# - Windows: Fonts should work out of the box
+# - Linux: sudo apt install fonts-dejavu-core fonts-liberation

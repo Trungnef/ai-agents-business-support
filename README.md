@@ -23,17 +23,37 @@
 
 <div align="center">
 
-https://github.com/user-attachments/assets/demo-video-placeholder
+[![Demo Video](https://img.youtube.com/vi/CUgJfurci3c/maxresdefault.jpg)](https://youtu.be/CUgJfurci3c)
 
-*Click to watch the full demo video showing the multi-agent system in action*
+**▶️ [Watch Demo on YouTube](https://youtu.be/CUgJfurci3c)** *(4:25 minutes)*
 
 </div>
 
-> **Note:** The demo video (`docs/multi_agent_support_demo.mp4`) showcases:
-> - Real-time intent classification
-> - Session memory with context resolution
-> - Security guardrails blocking unauthorized access
-> - Automatic ticket creation for escalations
+> **The demo video showcases:**
+> - 🎯 Real-time intent classification
+> - 💾 Session memory with context resolution  
+> - 🛡️ Security guardrails blocking unauthorized access
+> - 📝 Automatic ticket creation for escalations
+
+---
+
+## 📸 Screenshots
+
+<div align="center">
+
+| Title Screen | System Architecture |
+|:---:|:---:|
+| ![Title](output/screenshots/01_title.png) | ![Architecture](output/screenshots/03_architecture.png) |
+
+| Order Tracking Demo | Security Demo |
+|:---:|:---:|
+| ![Order Demo](output/screenshots/06_demo_order.png) | ![Security Demo](output/screenshots/08_demo_security.png) |
+
+| Course Concepts | Thank You |
+|:---:|:---:|
+| ![Test Results](output/screenshots/10_test_results.png) | ![Thank You](output/screenshots/12_thank_you.png) |
+
+</div>
 
 ---
 

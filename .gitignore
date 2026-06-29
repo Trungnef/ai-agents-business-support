@@ -58,3 +58,10 @@ coverage.xml
 # OS
 .DS_Store
 Thumbs.db
+
+# Video output (large files)
+output/audio/
+output/*.mp4
+output/*.srt
+output/*.mp3
+*TEMP_MPY*
