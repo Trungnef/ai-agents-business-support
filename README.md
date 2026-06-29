@@ -37,26 +37,6 @@
 
 ---
 
-## 📸 Screenshots
-
-<div align="center">
-
-| Title Screen | System Architecture |
-|:---:|:---:|
-| ![Title](output/screenshots/01_title.png) | ![Architecture](output/screenshots/03_architecture.png) |
-
-| Order Tracking Demo | Security Demo |
-|:---:|:---:|
-| ![Order Demo](output/screenshots/06_demo_order.png) | ![Security Demo](output/screenshots/08_demo_security.png) |
-
-| Course Concepts | Thank You |
-|:---:|:---:|
-| ![Test Results](output/screenshots/10_test_results.png) | ![Thank You](output/screenshots/12_thank_you.png) |
-
-</div>
-
----
-
 ## 🎯 Problem & Solution
 
 <table>
